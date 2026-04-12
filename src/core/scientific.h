@@ -37,6 +37,18 @@ ValuePtr double_factorial(const ValuePtr& a);
 ValuePtr choose(const ValuePtr& n, const ValuePtr& m, int precision);
 ValuePtr permutation(const ValuePtr& n, const ValuePtr& m, int precision);
 
+// --- Number theory ---
+ValuePtr gcd(const ValuePtr& a, const ValuePtr& b);
+ValuePtr lcm(const ValuePtr& a, const ValuePtr& b);
+ValuePtr next_prime(const ValuePtr& a);
+ValuePtr prev_prime(const ValuePtr& a);
+ValuePtr prime_test(const ValuePtr& a);       // Returns 2=definite, 1=probable, 0=composite
+ValuePtr totient(const ValuePtr& a);          // Euler's totient phi(n)
+ValuePtr prime_factors(const ValuePtr& a);    // Vector of [prime, exponent] pairs
+ValuePtr random(const ValuePtr& n);           // Random integer in [0, n)
+ValuePtr extended_gcd(const ValuePtr& a, const ValuePtr& b); // [gcd, x, y] s.t. ax+by=gcd
+ValuePtr mod_pow(const ValuePtr& base, const ValuePtr& exp, const ValuePtr& m);
+
 // --- Other ---
 ValuePtr sign(const ValuePtr& a);
 ValuePtr hypot(const ValuePtr& a, const ValuePtr& b, int precision);

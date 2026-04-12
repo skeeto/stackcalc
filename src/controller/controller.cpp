@@ -274,6 +274,82 @@ void Controller::execute(const std::string& command) {
         return;
     }
 
+    // --- Number theory ---
+    if (command == "gcd") {
+        stack_.begin_command();
+        auto args = stack_.pop_n(2);
+        auto r = scientific::gcd(args[0], args[1]);
+        stack_.push(r);
+        stack_.end_command("gcd", {r});
+        return;
+    }
+    if (command == "lcm") {
+        stack_.begin_command();
+        auto args = stack_.pop_n(2);
+        auto r = scientific::lcm(args[0], args[1]);
+        stack_.push(r);
+        stack_.end_command("lcm", {r});
+        return;
+    }
+    if (command == "next_prime") {
+        stack_.begin_command();
+        auto a = stack_.pop();
+        ValuePtr r;
+        if (inv) r = scientific::prev_prime(a);
+        else r = scientific::next_prime(a);
+        stack_.push(r);
+        stack_.end_command(inv ? "prevp" : "nextp", {r});
+        return;
+    }
+    if (command == "prime_test") {
+        stack_.begin_command();
+        auto a = stack_.pop();
+        auto r = scientific::prime_test(a);
+        stack_.push(r);
+        stack_.end_command("prime?", {r});
+        return;
+    }
+    if (command == "prime_factors") {
+        stack_.begin_command();
+        auto a = stack_.pop();
+        auto r = scientific::prime_factors(a);
+        stack_.push(r);
+        stack_.end_command("factor", {r});
+        return;
+    }
+    if (command == "totient") {
+        stack_.begin_command();
+        auto a = stack_.pop();
+        auto r = scientific::totient(a);
+        stack_.push(r);
+        stack_.end_command("totient", {r});
+        return;
+    }
+    if (command == "random") {
+        stack_.begin_command();
+        auto a = stack_.pop();
+        auto r = scientific::random(a);
+        stack_.push(r);
+        stack_.end_command("random", {r});
+        return;
+    }
+    if (command == "extended_gcd") {
+        stack_.begin_command();
+        auto args = stack_.pop_n(2);
+        auto r = scientific::extended_gcd(args[0], args[1]);
+        stack_.push(r);
+        stack_.end_command("egcd", {r});
+        return;
+    }
+    if (command == "mod_pow") {
+        stack_.begin_command();
+        auto args = stack_.pop_n(3);
+        auto r = scientific::mod_pow(args[0], args[1], args[2]);
+        stack_.push(r);
+        stack_.end_command("modpow", {r});
+        return;
+    }
+
     // --- Display format ---
     if (command == "display_normal") { state.display_format = DisplayFormat::Normal; return; }
     if (command == "display_fix")    { state.display_format = DisplayFormat::Fix; return; }

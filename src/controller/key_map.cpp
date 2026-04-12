@@ -114,9 +114,18 @@ void KeyMap::setup_defaults() {
     // --- Precision ---
     bind("p", "precision");
 
-    // --- Combinatorics (k prefix) ---
+    // --- Number theory / combinatorics (k prefix) ---
     bind_seq("k", "c", "choose");
     bind_seq("k", "d", "dfact");
+    bind_seq("k", "g", "gcd");
+    bind_seq("k", "l", "lcm");
+    bind_seq("k", "r", "random");
+    bind_seq("k", "n", "next_prime");
+    bind_seq("k", "p", "prime_test");
+    bind_seq("k", "f", "prime_factors");
+    bind_seq("k", "t", "totient");
+    bind_seq("k", "e", "extended_gcd");
+    bind_seq("k", "m", "mod_pow");
 
     // --- Vector (v prefix) ---
     bind_seq("v", "t", "transpose");

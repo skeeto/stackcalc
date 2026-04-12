@@ -3,6 +3,7 @@
 #include "constants.h"
 #include "arithmetic.h"
 #include "integer.h"
+#include <chrono>
 #include <stdexcept>
 
 namespace sc::scientific {
@@ -200,6 +201,148 @@ ValuePtr permutation(const ValuePtr& n, const ValuePtr& m, int precision) {
     auto nm = arith::sub(n, m, precision);
     auto nm_fact = factorial(nm, precision);
     return arith::div(n_fact, nm_fact, precision, FractionMode::Float);
+}
+
+// --- Number theory ---
+
+static const mpz_class& require_positive_int(const ValuePtr& v, const char* name) {
+    if (!v->is_integer()) throw std::domain_error(std::string(name) + " requires integer");
+    auto& val = v->as_integer().v;
+    if (val <= 0) throw std::domain_error(std::string(name) + " requires positive integer");
+    return val;
+}
+
+ValuePtr gcd(const ValuePtr& a, const ValuePtr& b) {
+    if (!a->is_integer() || !b->is_integer())
+        throw std::domain_error("gcd requires integers");
+    return integer::gcd(a->as_integer(), b->as_integer());
+}
+
+ValuePtr lcm(const ValuePtr& a, const ValuePtr& b) {
+    if (!a->is_integer() || !b->is_integer())
+        throw std::domain_error("lcm requires integers");
+    return integer::lcm(a->as_integer(), b->as_integer());
+}
+
+ValuePtr next_prime(const ValuePtr& a) {
+    if (!a->is_integer()) throw std::domain_error("next-prime requires integer");
+    mpz_class result;
+    mpz_nextprime(result.get_mpz_t(), a->as_integer().v.get_mpz_t());
+    return Value::make_integer(std::move(result));
+}
+
+ValuePtr prev_prime(const ValuePtr& a) {
+    if (!a->is_integer()) throw std::domain_error("prev-prime requires integer");
+    auto& v = a->as_integer().v;
+    if (v <= 2) throw std::domain_error("no prime less than 2");
+    // Search backward from v-1
+    mpz_class candidate = v - 1;
+    while (mpz_probab_prime_p(candidate.get_mpz_t(), 25) == 0) {
+        candidate -= 1;
+        if (candidate < 2) throw std::domain_error("no prime found");
+    }
+    return Value::make_integer(std::move(candidate));
+}
+
+ValuePtr prime_test(const ValuePtr& a) {
+    if (!a->is_integer()) throw std::domain_error("prime-test requires integer");
+    int result = mpz_probab_prime_p(a->as_integer().v.get_mpz_t(), 25);
+    return Value::make_integer(mpz_class(result));
+}
+
+ValuePtr totient(const ValuePtr& a) {
+    auto& n = require_positive_int(a, "totient");
+    if (n == 1) return Value::one();
+    // Factor n, then phi(n) = n * prod(1 - 1/p) for each prime factor p
+    mpz_class result = n;
+    mpz_class temp = n;
+    mpz_class p = 2;
+    while (p * p <= temp) {
+        if (mpz_divisible_p(temp.get_mpz_t(), p.get_mpz_t())) {
+            while (mpz_divisible_p(temp.get_mpz_t(), p.get_mpz_t()))
+                mpz_divexact(temp.get_mpz_t(), temp.get_mpz_t(), p.get_mpz_t());
+            result -= result / p;
+        }
+        p += 1;
+    }
+    if (temp > 1) {
+        result -= result / temp;
+    }
+    return Value::make_integer(std::move(result));
+}
+
+ValuePtr prime_factors(const ValuePtr& a) {
+    auto& n = require_positive_int(a, "prime-factors");
+    if (n == 1) return Value::make_vector({});
+
+    std::vector<ValuePtr> pairs;
+    mpz_class temp = n;
+    mpz_class p = 2;
+    while (p * p <= temp) {
+        if (mpz_divisible_p(temp.get_mpz_t(), p.get_mpz_t())) {
+            int count = 0;
+            while (mpz_divisible_p(temp.get_mpz_t(), p.get_mpz_t())) {
+                mpz_divexact(temp.get_mpz_t(), temp.get_mpz_t(), p.get_mpz_t());
+                count++;
+            }
+            pairs.push_back(Value::make_vector({
+                Value::make_integer(mpz_class(p)),
+                Value::make_integer(mpz_class(count))
+            }));
+        }
+        p += 1;
+    }
+    if (temp > 1) {
+        pairs.push_back(Value::make_vector({
+            Value::make_integer(mpz_class(temp)),
+            Value::one()
+        }));
+    }
+    return Value::make_vector(std::move(pairs));
+}
+
+ValuePtr random(const ValuePtr& n) {
+    if (!n->is_integer()) throw std::domain_error("random requires integer");
+    auto& v = n->as_integer().v;
+    if (v <= 0) throw std::domain_error("random requires positive bound");
+    // Thread-local GMP random state
+    static thread_local gmp_randstate_t state;
+    static thread_local bool initialized = false;
+    if (!initialized) {
+        gmp_randinit_mt(state);
+        gmp_randseed_ui(state, static_cast<unsigned long>(
+            std::chrono::steady_clock::now().time_since_epoch().count()));
+        initialized = true;
+    }
+    mpz_class result;
+    mpz_urandomm(result.get_mpz_t(), state, v.get_mpz_t());
+    return Value::make_integer(std::move(result));
+}
+
+ValuePtr extended_gcd(const ValuePtr& a, const ValuePtr& b) {
+    if (!a->is_integer() || !b->is_integer())
+        throw std::domain_error("extended-gcd requires integers");
+    mpz_class g, s, t;
+    mpz_gcdext(g.get_mpz_t(), s.get_mpz_t(), t.get_mpz_t(),
+               a->as_integer().v.get_mpz_t(), b->as_integer().v.get_mpz_t());
+    return Value::make_vector({
+        Value::make_integer(std::move(g)),
+        Value::make_integer(std::move(s)),
+        Value::make_integer(std::move(t))
+    });
+}
+
+ValuePtr mod_pow(const ValuePtr& base, const ValuePtr& exp, const ValuePtr& m) {
+    if (!base->is_integer() || !exp->is_integer() || !m->is_integer())
+        throw std::domain_error("mod-pow requires integers");
+    auto& mv = m->as_integer().v;
+    if (mv <= 0) throw std::domain_error("mod-pow requires positive modulus");
+    mpz_class result;
+    mpz_powm(result.get_mpz_t(),
+             base->as_integer().v.get_mpz_t(),
+             exp->as_integer().v.get_mpz_t(),
+             mv.get_mpz_t());
+    return Value::make_integer(std::move(result));
 }
 
 // --- Other ---
