@@ -1,0 +1,6 @@
+sc_add_test(stack_test stack_test.cpp stackcalc-calc)
+sc_add_test(trail_test trail_test.cpp stackcalc-calc)
+sc_add_test(undo_test undo_test.cpp stackcalc-calc)
+sc_add_test(arithmetic_test arithmetic_test.cpp stackcalc-calc)
+sc_add_test(variables_test variables_test.cpp stackcalc-calc)
+sc_add_test(modes_test modes_test.cpp stackcalc-calc)

@@ -1,0 +1,2 @@
+sc_add_test(input_state_test input_state_test.cpp stackcalc-controller)
+sc_add_test(controller_test controller_test.cpp stackcalc-controller)
