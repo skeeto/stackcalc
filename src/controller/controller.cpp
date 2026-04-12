@@ -302,11 +302,13 @@ void Controller::execute(const std::string& command) {
         return;
     }
     if (command == "prime_test") {
-        stack_.begin_command();
-        auto a = stack_.pop();
+        if (stack_.size() == 0) { message_ = "Stack underflow"; return; }
+        auto a = stack_.elements().back();
         auto r = scientific::prime_test(a);
-        stack_.push(r);
-        stack_.end_command("prime?", {r});
+        int v = static_cast<int>(r->as_integer().v.get_si());
+        if (v == 2) message_ = "Definitely prime";
+        else if (v == 1) message_ = "Probably prime";
+        else message_ = "Not prime";
         return;
     }
     if (command == "prime_factors") {
