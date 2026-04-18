@@ -10,12 +10,13 @@ ExternalProject_Add(mpfr_external
     PREFIX "${MPFR_PREFIX}"
     DEPENDS gmp_external
     CONFIGURE_COMMAND
-        <SOURCE_DIR>/configure
+        sh <SOURCE_DIR>/configure
         --prefix=<INSTALL_DIR>
         --disable-shared
         --with-pic
         --with-gmp=${GMP_PREFIX}
         "CC=${CMAKE_C_COMPILER}"
+        "CFLAGS=-O2 -std=gnu17"
     BUILD_COMMAND make -j4
     INSTALL_COMMAND make install
     BUILD_BYPRODUCTS

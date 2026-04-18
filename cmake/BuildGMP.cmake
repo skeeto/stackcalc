@@ -8,13 +8,14 @@ ExternalProject_Add(gmp_external
     URL_HASH SHA256=a3c2b80201b89e68616f4ad30bc66aee4927c3ce50e33929ca819d5c43538898
     PREFIX "${GMP_PREFIX}"
     CONFIGURE_COMMAND
-        <SOURCE_DIR>/configure
+        sh <SOURCE_DIR>/configure
         --prefix=<INSTALL_DIR>
         --enable-cxx
         --disable-shared
         --with-pic
         "CC=${CMAKE_C_COMPILER}"
         "CXX=${CMAKE_CXX_COMPILER}"
+        "CFLAGS=-O2 -std=gnu17"
     BUILD_COMMAND make -j4
     INSTALL_COMMAND make install
     BUILD_BYPRODUCTS
