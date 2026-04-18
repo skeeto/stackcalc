@@ -6,14 +6,15 @@ set(wxBUILD_TESTS   OFF CACHE BOOL "" FORCE)
 set(wxBUILD_SAMPLES OFF CACHE BOOL "" FORCE)
 set(wxBUILD_DEMOS   OFF CACHE BOOL "" FORCE)
 set(wxBUILD_INSTALL OFF CACHE BOOL "" FORCE)
-set(wxUSE_STC       OFF CACHE BOOL "" FORCE)  # skip Scintilla/Lexilla submodules
+set(wxUSE_STC       OFF CACHE BOOL "" FORCE)  # skip Scintilla
 set(wxUSE_WEBVIEW   OFF CACHE BOOL "" FORCE)  # skip WebKit on macOS
 
+# The release tarball includes all bundled third-party sources inline (zlib,
+# libpng, libjpeg, libtiff, expat, etc.), so unlike the git repo there are no
+# submodules to recurse.
 FetchContent_Declare(
     wxWidgets
-    GIT_REPOSITORY https://github.com/wxWidgets/wxWidgets.git
-    GIT_TAG        v3.2.10
-    GIT_SHALLOW    TRUE
-    GIT_SUBMODULES_RECURSE TRUE   # CRITICAL — vendored deps live in submodules
+    URL      https://github.com/wxWidgets/wxWidgets/releases/download/v3.2.10/wxWidgets-3.2.10.tar.bz2
+    URL_HASH SHA256=d66e929569947a4a5920699539089a9bda83a93e5f4917fb313a61f0c344b896
 )
 FetchContent_MakeAvailable(wxWidgets)
