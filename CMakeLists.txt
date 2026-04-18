@@ -11,9 +11,9 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 include(cmake/BuildGMP.cmake)
 include(cmake/BuildMPFR.cmake)
 
-option(STACKCALC_BUILD_GUI "Build the Dear ImGui GUI frontend" ON)
+option(STACKCALC_BUILD_GUI "Build the wxWidgets GUI frontend" ON)
 if(STACKCALC_BUILD_GUI)
-    include(cmake/FetchImGui.cmake)
+    include(cmake/FetchWxWidgets.cmake)
 endif()
 
 add_subdirectory(src)

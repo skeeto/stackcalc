@@ -1,22 +1,75 @@
 #pragma once
 
+#include <wx/wx.h>
+#include <wx/timer.h>
 #include "controller.h"
 
-class GuiApp {
+class CalcPanel;
+class TrailFrame;
+
+// Main application class
+class StackCalcApp : public wxApp {
 public:
-    GuiApp();
+    bool OnInit() override;
+};
 
-    void setup_font();
-    void render();
+// Main calculator window
+class StackCalcFrame : public wxFrame {
+public:
+    StackCalcFrame();
 
-    void on_char(unsigned int codepoint);
-    void on_key(int key, int scancode, int action, int mods);
+    void on_toggle_trail(wxCommandEvent& e);
+    void on_quit(wxCommandEvent& e);
+
+    CalcPanel* panel() { return panel_; }
+    TrailFrame* trail() { return trail_; }
+    void show_trail(bool show);
 
 private:
-    void render_stack(const sc::DisplayState& ds);
-    void render_mode_line(const sc::DisplayState& ds);
+    CalcPanel* panel_ = nullptr;
+    TrailFrame* trail_ = nullptr;
+};
+
+// Custom-painted calculator display
+class CalcPanel : public wxPanel {
+public:
+    explicit CalcPanel(wxWindow* parent);
+
+    sc::Controller& controller() { return ctrl_; }
+
+    // Re-render after state change
+    void redraw();
+
+private:
+    void on_paint(wxPaintEvent& e);
+    void on_key_down(wxKeyEvent& e);
+    void on_char(wxKeyEvent& e);
+    void on_blink_tick(wxTimerEvent& e);
+
+    void toggle_trail();
 
     sc::Controller ctrl_;
-    bool show_trail_ = false;
-    bool suppress_char_ = false;
+    wxFont mono_font_;
+    wxTimer blink_timer_;
+    bool cursor_visible_ = true;
 };
+
+// Separate trail window
+class TrailFrame : public wxFrame {
+public:
+    explicit TrailFrame(wxWindow* parent);
+
+    void update_entries(const std::vector<std::string>& entries);
+
+private:
+    void on_close(wxCloseEvent& e);
+
+    wxTextCtrl* text_ = nullptr;
+};
+
+// IDs for menu items
+enum {
+    ID_ToggleTrail = wxID_HIGHEST + 1,
+};
+
+wxDECLARE_APP(StackCalcApp);
