@@ -114,6 +114,17 @@ void KeyMap::setup_defaults() {
     // --- Precision ---
     bind("p", "precision");
 
+    // --- Bitwise (b prefix) ---
+    bind_seq("b", "a", "band");        // AND
+    bind_seq("b", "o", "bor");         // OR
+    bind_seq("b", "x", "bxor");        // XOR
+    bind_seq("b", "n", "bnot");        // NOT
+    bind_seq("b", "l", "lshift");      // left shift
+    bind_seq("b", "r", "rshift");      // right shift (arithmetic)
+    bind_seq("b", "t", "lrot");        // rotate (I gives right rotate)
+    bind_seq("b", "w", "word_size");   // set word size from stack
+    bind_seq("b", "c", "clip");        // clip to word size
+
     // --- Quick registers (Emacs t N store, r N recall) ---
     for (char d = '0'; d <= '9'; ++d) {
         bind_seq("t", std::string(1, d), std::string("qstore_") + d);

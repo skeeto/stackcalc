@@ -3,6 +3,7 @@
 #include "scientific.h"
 #include "constants.h"
 #include "vector.h"
+#include "bitwise.h"
 #include <cctype>
 #include <sstream>
 
@@ -373,6 +374,93 @@ void Controller::execute(const std::string& command) {
         auto r = scientific::gamma_fn(a, state.precision);
         stack_.push(r);
         stack_.end_command("gam", {r});
+        return;
+    }
+
+    // --- Bitwise (b prefix) ---
+    if (command == "band") {
+        stack_.begin_command();
+        auto args = stack_.pop_n(2);
+        auto r = bitwise::band(args[0], args[1]);
+        stack_.push(r);
+        stack_.end_command("and", {r});
+        return;
+    }
+    if (command == "bor") {
+        stack_.begin_command();
+        auto args = stack_.pop_n(2);
+        auto r = bitwise::bor(args[0], args[1]);
+        stack_.push(r);
+        stack_.end_command("or", {r});
+        return;
+    }
+    if (command == "bxor") {
+        stack_.begin_command();
+        auto args = stack_.pop_n(2);
+        auto r = bitwise::bxor(args[0], args[1]);
+        stack_.push(r);
+        stack_.end_command("xor", {r});
+        return;
+    }
+    if (command == "bnot") {
+        stack_.begin_command();
+        auto a = stack_.pop();
+        auto r = bitwise::bnot(a, state.word_size);
+        stack_.push(r);
+        stack_.end_command("not", {r});
+        return;
+    }
+    if (command == "lshift" || command == "rshift" || command == "lrot") {
+        stack_.begin_command();
+        auto args = stack_.pop_n(2);
+        if (!args[1]->is_integer())
+            throw std::invalid_argument("shift amount must be integer");
+        int bits = static_cast<int>(args[1]->as_integer().v.get_si());
+        ValuePtr r;
+        const char* tag;
+        if (command == "lshift") {
+            r = bitwise::lshift(args[0], bits, state.word_size);
+            tag = "lsh";
+        } else if (command == "rshift") {
+            r = bitwise::rshift(args[0], bits, state.word_size);
+            tag = "rsh";
+        } else {
+            // 'b t' rotate; I gives right-rotate.
+            r = inv ? bitwise::rrot(args[0], bits, state.word_size)
+                    : bitwise::lrot(args[0], bits, state.word_size);
+            tag = inv ? "rrot" : "lrot";
+        }
+        stack_.push(r);
+        stack_.end_command(tag, {r});
+        return;
+    }
+    if (command == "clip") {
+        stack_.begin_command();
+        auto a = stack_.pop();
+        auto r = bitwise::clip(a, state.word_size);
+        stack_.push(r);
+        stack_.end_command("clip", {r});
+        return;
+    }
+    if (command == "word_size") {
+        // Pop top as the new word size (must be 1..1024). Snapshot for undo.
+        if (stack_.size() > 0) {
+            stack_.begin_command();
+            auto v = stack_.pop();
+            if (v->is_integer()) {
+                int w = static_cast<int>(v->as_integer().v.get_si());
+                if (w >= 1 && w <= 1024) {
+                    state.word_size = w;
+                    stack_.end_command("wsz", {});
+                } else {
+                    stack_.discard_command();
+                    message_ = "Word size must be 1-1024";
+                }
+            } else {
+                stack_.discard_command();
+                message_ = "Word size requires an integer";
+            }
+        }
         return;
     }
 

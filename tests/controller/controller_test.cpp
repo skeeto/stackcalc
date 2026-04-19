@@ -326,6 +326,68 @@ TEST(ControllerTest, NonLetterCancelsVariableCommand) {
     EXPECT_TRUE(ctrl.display().pending_prefix.empty());
 }
 
+// --- Bitwise (b prefix) ---
+
+TEST(ControllerTest, BitwiseAnd) {
+    Controller ctrl;
+    feed_chars(ctrl, "12"); feed_special(ctrl, "RET");      // 0b1100
+    feed_chars(ctrl, "10"); feed_special(ctrl, "RET");      // 0b1010
+    feed_chars(ctrl, "ba");
+    EXPECT_EQ(ctrl.display().stack_entries.back(), "8");    // 0b1000
+}
+
+TEST(ControllerTest, BitwiseOr) {
+    Controller ctrl;
+    feed_chars(ctrl, "12"); feed_special(ctrl, "RET");
+    feed_chars(ctrl, "10"); feed_special(ctrl, "RET");
+    feed_chars(ctrl, "bo");
+    EXPECT_EQ(ctrl.display().stack_entries.back(), "14");   // 0b1110
+}
+
+TEST(ControllerTest, BitwiseXor) {
+    Controller ctrl;
+    feed_chars(ctrl, "12"); feed_special(ctrl, "RET");
+    feed_chars(ctrl, "10"); feed_special(ctrl, "RET");
+    feed_chars(ctrl, "bx");
+    EXPECT_EQ(ctrl.display().stack_entries.back(), "6");    // 0b0110
+}
+
+TEST(ControllerTest, LeftShift) {
+    Controller ctrl;
+    feed_chars(ctrl, "1"); feed_special(ctrl, "RET");
+    feed_chars(ctrl, "8"); feed_special(ctrl, "RET");
+    feed_chars(ctrl, "bl");
+    EXPECT_EQ(ctrl.display().stack_entries.back(), "256");
+}
+
+TEST(ControllerTest, RightShift) {
+    Controller ctrl;
+    feed_chars(ctrl, "256"); feed_special(ctrl, "RET");
+    feed_chars(ctrl, "3");   feed_special(ctrl, "RET");
+    feed_chars(ctrl, "br");
+    EXPECT_EQ(ctrl.display().stack_entries.back(), "32");
+}
+
+TEST(ControllerTest, WordSizeSetting) {
+    Controller ctrl;
+    feed_chars(ctrl, "8"); feed_special(ctrl, "RET");
+    feed_chars(ctrl, "bw");                                 // word size := 8
+    EXPECT_EQ(ctrl.display().stack_depth, 0);
+    // Verify by NOT-ing 0: should give 0xFF = 255 in an 8-bit word.
+    feed_chars(ctrl, "0"); feed_special(ctrl, "RET");
+    feed_chars(ctrl, "bn");
+    EXPECT_EQ(ctrl.display().stack_entries.back(), "255");
+}
+
+TEST(ControllerTest, WordSizeRejectsBadInputs) {
+    Controller ctrl;
+    feed_chars(ctrl, "0"); feed_special(ctrl, "RET");
+    feed_chars(ctrl, "bw");
+    auto ds = ctrl.display();
+    EXPECT_FALSE(ds.message.empty());
+    EXPECT_EQ(ds.stack_depth, 1);                           // 0 restored
+}
+
 // --- Quick registers q0-q9 ---
 
 TEST(ControllerTest, QuickStoreAndRecall) {
