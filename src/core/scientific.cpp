@@ -3,7 +3,9 @@
 #include "constants.hpp"
 #include "arithmetic.hpp"
 #include "integer.hpp"
+#include "limits.hpp"
 #include "mpz_int64.hpp"
+#include <bit>
 #include <chrono>
 #include <climits>
 #include <cstdint>
@@ -158,6 +160,12 @@ ValuePtr double_factorial(const ValuePtr& a) {
     if (v < 0) throw std::domain_error("double factorial of negative integer");
     if (!sc::mpz_fits_uint64(v)) throw std::overflow_error("double factorial argument too large");
     std::uint64_t n = sc::mpz_get_uint64(v);
+    // n!! has roughly half the bits of n!, but use the same n*log2(n)
+    // upper bound as factorial — slightly slack, but the cap is meant
+    // to catch order-of-magnitude blowups, not to be tight.
+    sc::check_result_bits(
+        sc::sat_mul_u64(n, static_cast<std::uint64_t>(std::bit_width(n))),
+        "double factorial");
     if (n <= static_cast<std::uint64_t>(ULONG_MAX)) {
         mpz_class result;
         mpz_2fac_ui(result.get_mpz_t(), static_cast<unsigned long>(n));
@@ -189,6 +197,13 @@ ValuePtr choose(const ValuePtr& n, const ValuePtr& m, int precision) {
         if (mv < 0 || nv < mv) return Value::zero();
         if (!sc::mpz_fits_uint64(mv)) throw std::overflow_error("choose argument too large");
         std::uint64_t k = sc::mpz_get_uint64(mv);
+        // C(n, k) <= 2^n, so the result has at most bits(n) bits — but
+        // we treat n's *value* as the bit-count cap because n itself is
+        // typically the bigger of the two. If n doesn't fit in uint64
+        // it's already astronomically beyond the cap, refuse outright.
+        if (!sc::mpz_fits_uint64(nv))
+            sc::throw_result_too_large("choose", UINT64_MAX);
+        sc::check_result_bits(sc::mpz_get_uint64(nv), "choose");
         if (k <= static_cast<std::uint64_t>(ULONG_MAX)) {
             mpz_class result;
             mpz_bin_ui(result.get_mpz_t(), nv.get_mpz_t(),
@@ -217,6 +232,11 @@ ValuePtr permutation(const ValuePtr& n, const ValuePtr& m, int precision) {
         if (mv < 0 || nv < mv) return Value::zero();
         if (!sc::mpz_fits_uint64(mv)) throw std::overflow_error("permutation argument too large");
         std::uint64_t k = sc::mpz_get_uint64(mv);
+        // P(n, k) <= n^k. bits(n^k) = k * bits(n). nv could itself be
+        // huge; if its bit-count alone exceeds the cap we'd refuse on
+        // k=1 too.
+        sc::check_result_bits(
+            sc::sat_mul_u64(k, sc::mpz_bits(nv)), "permutation");
         // n * (n-1) * ... * (n-k+1)
         mpz_class result(1);
         mpz_class cur = nv;

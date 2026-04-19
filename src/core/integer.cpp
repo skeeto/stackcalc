@@ -1,4 +1,6 @@
 #include "integer.hpp"
+#include "limits.hpp"
+#include <bit>
 #include <climits>
 #include <cstdint>
 #include <stdexcept>
@@ -50,6 +52,22 @@ ValuePtr abs(const Integer& a) {
 }
 
 ValuePtr pow(const Integer& base, std::uint64_t exp) {
+    // Trivial-base shortcuts. These have to live here (not just in
+    // arith::power) because integer::pow is also called directly —
+    // e.g. by arith::power's fraction path on each of num/den, where
+    // either could trivially be 1. They also keep the size check
+    // below from rejecting |base| in {0,1,-1} with a huge exp, where
+    // the result is actually 0 or ±1.
+    if (exp == 0)        return Value::make_integer(mpz_class(1));
+    if (base.v == 0)     return Value::make_integer(mpz_class(0));
+    if (base.v == 1)     return Value::make_integer(mpz_class(1));
+    if (base.v == -1)    return Value::make_integer(
+        mpz_class((exp & 1) ? -1 : 1));
+
+    // Pre-flight size check: |base|^exp has at most exp * log2(|base|)
+    // bits. Refuse before allocating if that's beyond our cap.
+    sc::check_result_bits(sc::sat_mul_u64(exp, sc::mpz_bits(base.v)), "pow");
+
     // Fast path: when exp fits in unsigned long, defer to GMP's optimised
     // mpz_pow_ui. This is always taken on LP64 (long is 64-bit) and on
     // LLP64 (Windows) for exp <= 2^32-1. Above that on LLP64 we fall
@@ -84,6 +102,13 @@ ValuePtr lcm(const Integer& a, const Integer& b) {
 }
 
 ValuePtr factorial(std::uint64_t n) {
+    // log2(n!) <= n * log2(n). std::bit_width(n) returns ceil(log2(n+1))
+    // which is a safe upper bound on log2(n) for our purposes. Trivially
+    // covers n in {0,1} (bit_width returns 0 / 1, est == 0 / 1 bits).
+    sc::check_result_bits(
+        sc::sat_mul_u64(n, static_cast<std::uint64_t>(std::bit_width(n))),
+        "factorial");
+
     if (n <= static_cast<std::uint64_t>(ULONG_MAX)) {
         mpz_class result;
         mpz_fac_ui(result.get_mpz_t(), static_cast<unsigned long>(n));
