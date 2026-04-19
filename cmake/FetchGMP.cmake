@@ -2,8 +2,8 @@ include(FetchContent)
 
 FetchContent_Declare(
     gmp
-    URL      https://github.com/skeeto/gmp-cmake/archive/refs/tags/v6.3.0.tar.gz
-    URL_HASH SHA256=599bf23e44176c813892b6dfb7b60957041e69b7f4f25144393501f7ca879d85
+    URL      https://github.com/skeeto/gmp-cmake/archive/refs/tags/v6.3.0.1.tar.gz
+    URL_HASH SHA256=de8b6262c05303705873f4e07333f22869d220818b67b95e8e93c8889b6eca2f
 )
 FetchContent_MakeAvailable(gmp)
 

@@ -9,6 +9,19 @@ target_link_libraries(stackcalc PRIVATE
     wx::richtext
 )
 
+# Statically link libstdc++ / libgcc / winpthreads on mingw so the
+# released stackcalc.exe has no .dll dependencies beyond the system
+# Windows libraries. Without this users would need the matching
+# libstdc++-6.dll / libgcc_s_seh-1.dll / libwinpthread-1.dll
+# alongside the EXE — fragile and confusing.
+if(MINGW)
+    target_link_options(stackcalc PRIVATE
+        -static-libgcc
+        -static-libstdc++
+        -static  # also picks up libwinpthread (needed for std::thread)
+    )
+endif()
+
 # Generate version.hpp from version.hpp.in so the C++ code, the
 # Windows manifest, and the macOS bundle Info.plist all read from
 # project(... VERSION ...) at the top of the root CMakeLists.

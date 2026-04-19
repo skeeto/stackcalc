@@ -46,9 +46,17 @@ endif()
 
 add_subdirectory(src)
 
-enable_testing()
-include(cmake/FetchGoogleTest.cmake)
-add_subdirectory(tests)
+option(STACKCALC_BUILD_TESTS "Build the test suite" ON)
+# gtest_discover_tests enumerates by EXECUTING each test binary at
+# build time, so tests can't be built when cross-compiling — the host
+# can't run target executables. Release pipelines also opt out
+# explicitly (-DSTACKCALC_BUILD_TESTS=OFF) since artifact builds
+# don't need the suite; tests run separately on dev builds.
+if(STACKCALC_BUILD_TESTS AND NOT CMAKE_CROSSCOMPILING)
+    enable_testing()
+    include(cmake/FetchGoogleTest.cmake)
+    add_subdirectory(tests)
+endif()
 
 # --- Packaging (CPack) ---
 # `cmake --build build --target package` produces a release artifact:
