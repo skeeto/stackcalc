@@ -866,6 +866,12 @@ void CalcPanel::on_key_down(wxKeyEvent& e) {
 void CalcPanel::clear_selections() {
     if (stack_ctrl_)  stack_ctrl_->SelectNone();
     if (trail_panel_) trail_panel_->SelectNone();
+    // Pull focus off whichever rich-text widget might own it, onto the
+    // panel itself. SelectNone clears the blue highlight, but the
+    // caret (the blinking I-beam) only goes away when the widget loses
+    // focus. The panel has wxWANTS_CHARS and the same on_char/
+    // on_key_down bindings, so subsequent typing keeps working.
+    if (FindFocus() != this) SetFocus();
 }
 
 // === TrailPanel: right-pane trail viewer =====================================
