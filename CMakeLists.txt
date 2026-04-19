@@ -68,6 +68,12 @@ if(APPLE)
     set(CPACK_GENERATOR "DragNDrop")
     set(CPACK_PACKAGE_FILE_NAME "stackcalc-${PROJECT_VERSION}-macos-arm64")
     set(CPACK_DMG_VOLUME_NAME "stackcalc")
+    # Force APFS instead of CMake's default HFS+. On macOS Sequoia
+    # (15.x), `hdiutil create -fs HFS+` from an APFS source volume
+    # produces a silently corrupt DMG that fails to verify and can't
+    # be mounted. APFS DMG creation works reliably. CPACK_DMG_FILESYSTEM
+    # is honoured by CMake 3.20+.
+    set(CPACK_DMG_FILESYSTEM "APFS")
 elseif(WIN32)
     set(CPACK_GENERATOR "ZIP")
     set(CPACK_PACKAGE_FILE_NAME "stackcalc-${PROJECT_VERSION}-windows-x64")
