@@ -21,6 +21,30 @@ static const wxColour kModeColor     (102, 204, 255);
 static const wxColour kFlagColor     (255, 255, 102);
 static const wxColour kErrorColor    (255, 77, 77);
 
+// wxRichTextCtrl::WriteText is roughly linear-with-bad-constant in
+// input length; pumping ~500 000 characters into it freezes the UI
+// for many seconds and (since it runs on the UI thread) drops Ctrl+G
+// on the floor. Cap the per-entry render length — anything past this
+// is unreadable anyway. The full value is still on the stack and any
+// subsequent operator sees the real number; this is purely a
+// render-side guard. Applied at every WriteText call site that takes
+// a stack-derived value (stack widget AND trail widget).
+static constexpr size_t kMaxEntryRender = 8192;
+
+static void write_value_capped(wxRichTextCtrl* ctrl, const std::string& s,
+                               const wxColour& full_color = kValueColor) {
+    if (s.size() > kMaxEntryRender) {
+        ctrl->BeginTextColour(kFlagColor);
+        ctrl->WriteText(wxString::Format(
+            "<value too large to display: %zu chars>", s.size()));
+        ctrl->EndTextColour();
+    } else {
+        ctrl->BeginTextColour(full_color);
+        ctrl->WriteText(wxString::FromUTF8(s.c_str()));
+        ctrl->EndTextColour();
+    }
+}
+
 // === Session persistence (per-platform user data dir) ========================
 
 namespace {
@@ -773,15 +797,6 @@ void CalcPanel::update_stack() {
         const auto& entries = cached_display_.stack_entries;
         int n = static_cast<int>(entries.size());
 
-        // wxRichTextCtrl::WriteText is roughly linear-with-bad-constant
-        // in input length; pumping ~500 000 characters into it freezes
-        // the UI for many seconds and (since it's running on the UI
-        // thread) drops Ctrl+G on the floor. Cap the per-entry render
-        // length — anything past this is unreadable anyway. The full
-        // value is still on the stack and accessible to operators;
-        // this is purely a render-side guard.
-        constexpr size_t kMaxEntryRender = 8192;
-
         for (int j = 0; j < n; ++j) {
             int idx = n - 1 - j;        // entry index in stack_entries
             int label = j + 1;          // 1 = top of stack
@@ -790,17 +805,7 @@ void CalcPanel::update_stack() {
             stack_ctrl_->WriteText(wxString::Format("%3d:  ", label));
             stack_ctrl_->EndTextColour();
 
-            const std::string& s = entries[idx];
-            if (s.size() > kMaxEntryRender) {
-                stack_ctrl_->BeginTextColour(kFlagColor);
-                stack_ctrl_->WriteText(wxString::Format(
-                    "<value too large to display: %zu chars>", s.size()));
-                stack_ctrl_->EndTextColour();
-            } else {
-                stack_ctrl_->BeginTextColour(kValueColor);
-                stack_ctrl_->WriteText(wxString::FromUTF8(s.c_str()));
-                stack_ctrl_->EndTextColour();
-            }
+            write_value_capped(stack_ctrl_, entries[idx]);
 
             if (j + 1 < n) stack_ctrl_->Newline();
         }
@@ -1095,9 +1100,13 @@ void TrailPanel::refresh_from_state() {
         WriteText(is_pointer ? "> " : "  ");
         EndTextColour();
 
-        BeginTextColour(is_pointer ? kFlagColor : kValueColor);
-        WriteText(wxString::FromUTF8(ds.trail_entries[i].c_str()));
-        EndTextColour();
+        // Same per-entry render cap as the stack widget — trail
+        // entries include operation results, so 99999^99999 lands a
+        // 500 000-char string here too. Without the cap, scrolling
+        // through trail history freezes the UI just as badly as
+        // first-render did.
+        write_value_capped(this, ds.trail_entries[i],
+                           is_pointer ? kFlagColor : kValueColor);
 
         if (i + 1 < n) Newline();
     }
