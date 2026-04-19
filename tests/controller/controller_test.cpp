@@ -248,6 +248,84 @@ TEST(ControllerTest, ArbitraryRadixFromStack) {
     EXPECT_TRUE(ds.message.empty());
 }
 
+// --- Variable storage (single-letter names) ---
+
+TEST(ControllerTest, StoreAndRecall) {
+    Controller ctrl;
+    feed_chars(ctrl, "42"); feed_special(ctrl, "RET");
+    feed_chars(ctrl, "ssa");                    // s s a: store top in 'a' (peek)
+    EXPECT_EQ(ctrl.display().stack_depth, 1) << "store should not pop";
+    feed_chars(ctrl, "DEL");                    // (defensive — DEL is fine)
+    // Drop and recall
+    feed_special(ctrl, "DEL");                  // drop the 42
+    EXPECT_EQ(ctrl.display().stack_depth, 0);
+    feed_chars(ctrl, "sra");                    // s r a: recall 'a'
+    EXPECT_EQ(ctrl.display().stack_depth, 1);
+    EXPECT_EQ(ctrl.display().stack_entries.back(), "42");
+}
+
+TEST(ControllerTest, StoreIntoPops) {
+    Controller ctrl;
+    feed_chars(ctrl, "7"); feed_special(ctrl, "RET");
+    feed_chars(ctrl, "stx");                    // s t x: pop and store in 'x'
+    EXPECT_EQ(ctrl.display().stack_depth, 0);
+    feed_chars(ctrl, "srx");
+    EXPECT_EQ(ctrl.display().stack_entries.back(), "7");
+}
+
+TEST(ControllerTest, RecallUnknownVariableErrors) {
+    Controller ctrl;
+    feed_chars(ctrl, "srz");
+    auto ds = ctrl.display();
+    EXPECT_FALSE(ds.message.empty());
+    EXPECT_EQ(ds.stack_depth, 0);
+}
+
+TEST(ControllerTest, ExchangeSwapsTopWithVariable) {
+    Controller ctrl;
+    feed_chars(ctrl, "1"); feed_special(ctrl, "RET");
+    feed_chars(ctrl, "ssa");                    // a := 1
+    feed_chars(ctrl, "2"); feed_special(ctrl, "RET");
+    EXPECT_EQ(ctrl.display().stack_entries.back(), "2");
+    feed_chars(ctrl, "sxa");                    // exchange: top becomes 1, a becomes 2
+    EXPECT_EQ(ctrl.display().stack_entries.back(), "1");
+    feed_chars(ctrl, "sra");
+    EXPECT_EQ(ctrl.display().stack_entries.back(), "2");
+}
+
+TEST(ControllerTest, UnstoreRemovesVariable) {
+    Controller ctrl;
+    feed_chars(ctrl, "5"); feed_special(ctrl, "RET");
+    feed_chars(ctrl, "ssa");
+    feed_chars(ctrl, "sua");                    // unstore 'a'
+    feed_chars(ctrl, "sra");                    // recall now fails
+    EXPECT_FALSE(ctrl.display().message.empty());
+}
+
+TEST(ControllerTest, StoreArithmetic) {
+    Controller ctrl;
+    feed_chars(ctrl, "10"); feed_special(ctrl, "RET");
+    feed_chars(ctrl, "ssa");                    // a := 10  (stack: [10])
+    feed_chars(ctrl, "3");  feed_special(ctrl, "RET");      // stack: [10, 3]
+    feed_chars(ctrl, "s+a");                    // a := 10+3 = 13; stack unchanged
+    EXPECT_EQ(ctrl.display().stack_depth, 2);
+    EXPECT_EQ(ctrl.display().stack_entries.back(), "3");
+    feed_special(ctrl, "DEL");                  // [10]
+    feed_special(ctrl, "DEL");                  // []
+    feed_chars(ctrl, "sra");
+    EXPECT_EQ(ctrl.display().stack_entries.back(), "13");
+}
+
+TEST(ControllerTest, NonLetterCancelsVariableCommand) {
+    Controller ctrl;
+    feed_chars(ctrl, "1"); feed_special(ctrl, "RET");
+    feed_chars(ctrl, "ss");                     // start s s, now waiting for name
+    EXPECT_EQ(ctrl.display().pending_prefix, "store ?");
+    feed_chars(ctrl, "5");                      // not a letter — cancel
+    EXPECT_FALSE(ctrl.display().message.empty());
+    EXPECT_TRUE(ctrl.display().pending_prefix.empty());
+}
+
 // User-reported: in radix 16, `d g` couldn't reach the grouping command
 // because input_state.feed() was eagerly consuming `d` as a hex digit
 // (starting a new number entry) before the keymap dispatcher saw it.

@@ -3,6 +3,7 @@
 #include "scientific.h"
 #include "constants.h"
 #include "vector.h"
+#include <cctype>
 #include <sstream>
 
 namespace sc {
@@ -12,6 +13,26 @@ Controller::Controller() {}
 bool Controller::process_key(const KeyEvent& key) {
     message_.clear();
     std::string kn = key.key_name();
+
+    // If a variable command (s s, s r, etc.) is waiting for its name, the
+    // next keystroke is consumed as a single-letter variable name.
+    if (!pending_var_command_.empty()) {
+        std::string cmd = pending_var_command_;
+        pending_var_command_.clear();
+        if (key.type == KeyEvent::Char &&
+            std::isalpha(static_cast<unsigned char>(key.ch))) {
+            std::string name(1, key.ch);
+            try {
+                execute_var_command(cmd, name);
+            } catch (const std::exception& e) {
+                stack_.discard_command();
+                message_ = e.what();
+            }
+        } else {
+            message_ = "Cancelled (variable name must be a letter)";
+        }
+        return true;
+    }
 
     // If we have a pending prefix, look up the two-key sequence
     if (!pending_prefix_.empty()) {
@@ -104,6 +125,19 @@ void Controller::execute(const std::string& command) {
             stack_.dup();
         }
         state.clear_transient_flags();
+        return;
+    }
+
+    // --- Variable storage / recall (s s, s r, s t, s x, s u, s + - * /) ---
+    // Each just defers: the next keystroke is consumed as the variable name.
+    if (command == "store"      || command == "recall"    ||
+        command == "store_into" || command == "exchange"  ||
+        command == "unstore"    ||
+        command == "store_add"  || command == "store_sub" ||
+        command == "store_mul"  || command == "store_div") {
+        finalize_entry();  // commit any pending number entry first
+        state.clear_transient_flags();
+        pending_var_command_ = command;
         return;
     }
 
@@ -566,10 +600,73 @@ DisplayState Controller::display() const {
     ds.hyperbolic_flag = stack_.state().hyperbolic_flag;
     ds.keep_args_flag = stack_.state().keep_args_flag;
 
-    // Pending prefix key
-    ds.pending_prefix = pending_prefix_;
+    // Pending prefix key (or pending variable-command "waiting for name")
+    if (!pending_prefix_.empty()) {
+        ds.pending_prefix = pending_prefix_;
+    } else if (!pending_var_command_.empty()) {
+        ds.pending_prefix = pending_var_command_ + " ?";
+    }
 
     return ds;
+}
+
+void Controller::execute_var_command(const std::string& command,
+                                     const std::string& name) {
+    auto& state = stack_.state();
+
+    // Recall: pushes; doesn't need stack input.
+    if (command == "recall") {
+        auto v = vars_.recall(name);
+        if (!v) throw std::invalid_argument("variable '" + name + "' not stored");
+        stack_.begin_command();
+        stack_.push(*v);
+        stack_.end_command("rcl-" + name, {*v});
+        return;
+    }
+
+    // Unstore: doesn't touch the stack.
+    if (command == "unstore") {
+        if (!vars_.exists(name))
+            throw std::invalid_argument("variable '" + name + "' not stored");
+        vars_.unstore(name);
+        return;
+    }
+
+    // The remaining commands all need a value at top of stack.
+    if (stack_.size() == 0) throw StackError("stack underflow");
+
+    // Store: peek top, save under name. Stack unchanged.
+    if (command == "store") {
+        vars_.store(name, stack_.top());
+        return;
+    }
+
+    // Store-into: pop top, save under name.
+    if (command == "store_into") {
+        stack_.begin_command();
+        auto v = stack_.pop();
+        vars_.store(name, v);
+        stack_.end_command("sto-" + name, {});
+        return;
+    }
+
+    // Exchange: swap variable's value with top of stack.
+    if (command == "exchange") {
+        stack_.begin_command();
+        auto top = stack_.pop();
+        auto old = vars_.exchange(name, top);  // throws if var not stored
+        stack_.push(old);
+        stack_.end_command("xch-" + name, {old});
+        return;
+    }
+
+    // Arithmetic store: peek top, var := var op top. Stack unchanged.
+    if (command == "store_add") { vars_.store_add(name, stack_.top(), state.precision); return; }
+    if (command == "store_sub") { vars_.store_sub(name, stack_.top(), state.precision); return; }
+    if (command == "store_mul") { vars_.store_mul(name, stack_.top(), state.precision); return; }
+    if (command == "store_div") { vars_.store_div(name, stack_.top(), state.precision); return; }
+
+    throw std::invalid_argument("unknown variable command: " + command);
 }
 
 std::string Controller::build_mode_line() const {

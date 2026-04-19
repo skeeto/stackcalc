@@ -30,6 +30,10 @@ private:
     // Execute a command by name.
     void execute(const std::string& command);
 
+    // Execute a variable command (s s/r/t/x/u/+/-/*/)/) once we've read
+    // the single-letter variable name.
+    void execute_var_command(const std::string& command, const std::string& name);
+
     // Finalize number entry if active, pushing the value onto the stack.
     void finalize_entry();
 
@@ -41,6 +45,7 @@ private:
     InputState input_;
     KeyMap keymap_;
     std::string pending_prefix_;
+    std::string pending_var_command_;  // command name waiting for a var name keystroke
     std::string message_;
 };
 
