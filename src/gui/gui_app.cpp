@@ -179,7 +179,10 @@ void CalcPanel::on_paint(wxPaintEvent&) {
         wxColour color;
         // For two-color "label + value" lines we draw twice; we represent that
         // as two consecutive Lines where the value has a label_width offset.
-        int x_offset = padding;
+        // Every Line is constructed with an explicit x_offset; the default is
+        // just here to satisfy the language (a default member initializer can't
+        // capture a local variable, so we can't write `= padding`).
+        int x_offset = 0;
     };
     std::vector<Line> lines;
 

@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include "vector.h"
 #include "arithmetic.h"
+#include <cmath>
 
 using namespace sc;
 

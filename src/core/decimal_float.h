@@ -1,6 +1,7 @@
 #pragma once
 
 #include "value.h"
+#include <optional>
 
 namespace sc {
 namespace decimal_float {

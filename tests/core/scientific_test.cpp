@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include "scientific.h"
 #include "constants.h"
+#include <cmath>
 
 using namespace sc;
 
