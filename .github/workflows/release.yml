@@ -27,6 +27,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Cache the FetchContent output (GMP, MPFR, wxWidgets) so wx
+      # only rebuilds when its tarball URL/hash changes. ImageVersion
+      # is GitHub's per-runner-image identifier — bumps when the
+      # mac-14 image is refreshed (toolchain version moves with it).
+      - name: Cache _deps
+        uses: actions/cache@v4
+        with:
+          path: build/_deps
+          key: deps-macos-${{ runner.os }}-${{ env.ImageVersion }}-${{ hashFiles('cmake/Fetch*.cmake') }}
+          restore-keys: |
+            deps-macos-${{ runner.os }}-${{ env.ImageVersion }}-
+
       - name: Configure
         run: |
           cmake -B build -S . \
@@ -36,7 +48,12 @@ jobs:
             -DSTACKCALC_BUILD_TESTS=OFF
 
       - name: Build
-        run: cmake --build build --config Release -j
+        # -j 2 keeps memory pressure manageable on the 14 GB mac-14
+        # runner; cached _deps means the second-run cost is small
+        # even at low parallelism. See build-windows for the swap-
+        # thrashing failure mode this avoids on the smaller ubuntu
+        # runner.
+        run: cmake --build build --config Release -j 2
 
       - name: Package (DMG)
         run: cmake --build build --target package
@@ -64,6 +81,18 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y mingw-w64
 
+      # Cache the FetchContent output. The toolchain file is part of
+      # the key because changing the mingw flags would otherwise
+      # silently reuse incompatible objects. ImageVersion bumps when
+      # the ubuntu image rolls (apt-installed mingw moves with it).
+      - name: Cache _deps
+        uses: actions/cache@v4
+        with:
+          path: build/_deps
+          key: deps-mingw-${{ runner.os }}-${{ env.ImageVersion }}-${{ hashFiles('cmake/Fetch*.cmake', 'cmake/mingw-w64-x86_64.cmake') }}
+          restore-keys: |
+            deps-mingw-${{ runner.os }}-${{ env.ImageVersion }}-
+
       - name: Configure
         run: |
           cmake -B build -S . \
@@ -71,7 +100,11 @@ jobs:
             -DCMAKE_TOOLCHAIN_FILE=cmake/mingw-w64-x86_64.cmake
 
       - name: Build
-        run: cmake --build build -j
+        # -j 2 instead of -j (= 4) on the 7 GB ubuntu-latest runner.
+        # Default parallelism caused wxWidgets compiles to thrash
+        # swap and stall the build past the runner's stuck-detection
+        # window, which read as a phantom cancellation at 88%.
+        run: cmake --build build -j 2
 
       - name: Upload unsigned exe
         uses: actions/upload-artifact@v4
