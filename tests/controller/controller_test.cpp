@@ -236,6 +236,56 @@ TEST(ControllerTest, SetPrecision) {
     EXPECT_TRUE(ds.mode_line.find("20") != std::string::npos);
 }
 
+// --- Reset to pristine state ---
+
+TEST(ControllerTest, ResetWipesEverything) {
+    Controller ctrl;
+    // Build up some state across all the things reset should clear.
+    feed_chars(ctrl, "5"); feed_special(ctrl, "RET");
+    feed_chars(ctrl, "7"); feed_special(ctrl, "RET");
+    feed_chars(ctrl, "+");           // stack: [12], trail entries
+    feed_chars(ctrl, "ssa");         // a := 12
+    feed_chars(ctrl, "t3");          // q3 := 12
+    feed_chars(ctrl, "d6");          // radix 16
+    feed_chars(ctrl, "mr");          // angular mode radians
+    feed_chars(ctrl, "I");           // inverse flag set
+    feed_chars(ctrl, "12");          // input "12" active
+
+    // Sanity: state is dirty.
+    EXPECT_GT(ctrl.display().stack_depth, 0);
+    EXPECT_GT(ctrl.display().trail_entries.size(), 0u);
+    EXPECT_EQ(ctrl.stack().state().display_radix, 16);
+    EXPECT_EQ(ctrl.stack().state().angular_mode, AngularMode::Radians);
+    EXPECT_TRUE(ctrl.stack().state().inverse_flag);
+    EXPECT_TRUE(ctrl.input().active());
+    EXPECT_TRUE(ctrl.variables().exists("a"));
+
+    ctrl.reset();
+
+    EXPECT_EQ(ctrl.display().stack_depth, 0);
+    EXPECT_EQ(ctrl.display().trail_entries.size(), 0u);
+    EXPECT_EQ(ctrl.stack().state().display_radix, 10);
+    EXPECT_EQ(ctrl.stack().state().precision, 12);
+    EXPECT_EQ(ctrl.stack().state().angular_mode, AngularMode::Degrees);
+    EXPECT_EQ(ctrl.stack().state().group_digits, 0);
+    EXPECT_FALSE(ctrl.stack().state().inverse_flag);
+    EXPECT_FALSE(ctrl.input().active());
+    EXPECT_FALSE(ctrl.variables().exists("a"));
+}
+
+TEST(ControllerTest, ResetClearsUndoHistory) {
+    Controller ctrl;
+    feed_chars(ctrl, "5"); feed_special(ctrl, "RET");
+    feed_chars(ctrl, "3"); feed_special(ctrl, "RET");
+    feed_chars(ctrl, "+");
+    EXPECT_EQ(ctrl.display().stack_entries.back(), "8");
+    ctrl.reset();
+    EXPECT_EQ(ctrl.display().stack_depth, 0);
+    // Undo after reset must be a no-op — there's no history to revert to.
+    feed_chars(ctrl, "U");
+    EXPECT_EQ(ctrl.display().stack_depth, 0);
+}
+
 // --- Auto-grouping default per radix (3 for non-hex, 4 for hex) ---
 
 TEST(ControllerTest, GroupingDefaultIsThreeInDecimal) {

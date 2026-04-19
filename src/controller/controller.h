@@ -17,6 +17,11 @@ public:
     // Process a key event. Returns true if handled.
     bool process_key(const KeyEvent& key);
 
+    // Wipe everything back to a pristine state: empty stack, empty trail,
+    // cleared undo history, cleared variables, default modes, no pending
+    // input or prefix, no modifier flags. Not undoable.
+    void reset();
+
     // Get the current display state (read-only snapshot).
     DisplayState display() const;
 

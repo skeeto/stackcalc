@@ -90,6 +90,8 @@ void StackCalcFrame::build_menus() {
 
     // ---- File ----
     auto* file = new wxMenu();
+    file->Append(ID_Reset, "&Reset Calculator\tCtrl+R");
+    file->AppendSeparator();
     file->Append(wxID_EXIT, "&Quit\tCtrl+Q");
     mb->Append(file, "&File");
 
@@ -370,6 +372,11 @@ void StackCalcFrame::build_menus() {
     // One handler covers all dispatch IDs; specific ones get their own.
     Bind(wxEVT_MENU, &StackCalcFrame::on_quit,        this, wxID_EXIT);
     Bind(wxEVT_MENU, &StackCalcFrame::on_about,       this, wxID_ABOUT);
+    Bind(wxEVT_MENU, [this](wxCommandEvent&) {
+        panel_->controller().reset();
+        panel_->redraw();
+        panel_->SetFocus();
+    }, ID_Reset);
     Bind(wxEVT_MENU, &StackCalcFrame::on_menu_dispatch,
          this, ID_DispatchBase, ID_DispatchEnd);
 

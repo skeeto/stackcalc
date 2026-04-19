@@ -140,6 +140,7 @@ private:
 
 // IDs for menu items
 enum {
+    ID_Reset = wxID_HIGHEST + 1,
     // Dispatching menu items (the ones that just feed keystrokes) live
     // in a contiguous range starting here; on_menu_dispatch handles them
     // all via the menu_dispatch_ table.

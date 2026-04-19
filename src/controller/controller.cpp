@@ -19,6 +19,19 @@ namespace sc {
 
 Controller::Controller() {}
 
+void Controller::reset() {
+    // Default-construct everything that holds calculator state. The Stack
+    // owns the trail, undo manager, CalcState, and last-args, so a single
+    // re-initialization wipes those four. Variables (named + quick) and
+    // the in-progress input get explicit resets.
+    stack_ = Stack();
+    vars_ = Variables();
+    input_.cancel();
+    pending_prefix_.clear();
+    pending_var_command_.clear();
+    message_.clear();
+}
+
 bool Controller::process_key(const KeyEvent& key) {
     message_.clear();
     std::string kn = key.key_name();
