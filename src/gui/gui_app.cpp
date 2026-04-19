@@ -1,6 +1,11 @@
 #include "gui_app.h"
+#include "persistence.h"
 #include <wx/dcbuffer.h>
+#include <wx/file.h>
+#include <wx/filename.h>
+#include <wx/stdpaths.h>
 #include <cstdio>
+#include <sstream>
 #include <string>
 
 // --- Color palette (matches old ImGui look) ---
@@ -13,6 +18,53 @@ static const wxColour kEntryColor    (102, 255, 102);
 static const wxColour kModeColor     (102, 204, 255);
 static const wxColour kFlagColor     (255, 255, 102);
 static const wxColour kErrorColor    (255, 77, 77);
+
+// === Session persistence (per-platform user data dir) ========================
+
+namespace {
+
+// Returns the per-user data directory (created if needed) plus the state
+// filename. Locations:
+//   macOS    ~/Library/Application Support/stackcalc/state.scl
+//   Windows  %APPDATA%\stackcalc\state.scl
+//   Linux    $XDG_DATA_HOME/stackcalc/state.scl  (default ~/.local/share/...)
+wxString state_file_path() {
+    wxString dir = wxStandardPaths::Get().GetUserDataDir();
+    if (!wxFileName::DirExists(dir)) {
+        wxFileName::Mkdir(dir, wxS_DIR_DEFAULT, wxPATH_MKDIR_FULL);
+    }
+    return dir + wxFileName::GetPathSeparator() + "state.scl";
+}
+
+// Read entire file with wxFile (native handles, no stdio).
+bool read_state_file(const wxString& path, std::string& out) {
+    if (!wxFileName::FileExists(path)) return false;
+    wxFile f;
+    if (!f.Open(path, wxFile::read)) return false;
+    wxFileOffset len = f.Length();
+    if (len < 0) return false;
+    out.assign(static_cast<size_t>(len), '\0');
+    ssize_t got = f.Read(out.data(), len);
+    return got == len;
+}
+
+// Atomically-ish overwrite the state file via wxFile (no stdio).
+bool write_state_file(const wxString& path, const std::string& contents) {
+    wxFile f;
+    if (!f.Create(path, /*overwrite=*/true)) return false;
+    return f.Write(contents.data(), contents.size()) == contents.size();
+}
+
+// Pull "(window W H S)" out of saved contents (the persistence module
+// itself ignores this form as unknown). Returns true if found and parsed.
+bool parse_window_line(const std::string& s, int& w, int& h, int& sash) {
+    size_t pos = s.find("(window ");
+    if (pos == std::string::npos) return false;
+    return std::sscanf(s.c_str() + pos, "(window %d %d %d)",
+                       &w, &h, &sash) == 3;
+}
+
+} // anon namespace
 
 // === StackCalcFrame ===========================================================
 
@@ -77,11 +129,41 @@ StackCalcFrame::StackCalcFrame()
     build_menus();
     panel_->SetFocus();
 
-    // Center the sash once layout has run and the splitter has its real
-    // width. Without this, the trail pane comes out near-zero-width
-    // because the splitter was 0 wide when SplitVertically was called.
-    CallAfter([this] {
-        splitter_->SetSashPosition(splitter_->GetClientSize().GetWidth() / 2);
+    // Try to restore saved session. If we got a window size and sash from
+    // the saved state, use those; otherwise fall back to centering and a
+    // 50/50 sash split via CallAfter (so the splitter has its real width
+    // by the time we set the sash position).
+    int saved_w = -1, saved_h = -1, saved_sash = -1;
+    {
+        std::string contents;
+        if (read_state_file(state_file_path(), contents)) {
+            std::istringstream in(contents);
+            sc::persistence::load(in, panel_->controller());
+            panel_->redraw();
+            parse_window_line(contents, saved_w, saved_h, saved_sash);
+        }
+    }
+    if (saved_w > 0 && saved_h > 0) {
+        SetClientSize(saved_w, saved_h);
+    }
+    if (saved_sash <= 0) {
+        // Default 50/50 split (deferred so the splitter has its real width).
+        CallAfter([this] {
+            splitter_->SetSashPosition(splitter_->GetClientSize().GetWidth() / 2);
+        });
+    } else {
+        CallAfter([this, saved_sash] { splitter_->SetSashPosition(saved_sash); });
+    }
+
+    // Save session on close.
+    Bind(wxEVT_CLOSE_WINDOW, [this](wxCloseEvent& e) {
+        std::ostringstream out;
+        sc::persistence::save(out, panel_->controller());
+        out << "(window " << GetClientSize().GetWidth()
+            << " "        << GetClientSize().GetHeight()
+            << " "        << splitter_->GetSashPosition() << ")\n";
+        write_state_file(state_file_path(), out.str());
+        e.Skip();  // continue normal close handling
     });
 }
 
@@ -806,6 +888,8 @@ void TrailPanel::refresh_from_state() {
 // === StackCalcApp =============================================================
 
 bool StackCalcApp::OnInit() {
+    // Drives wxStandardPaths::GetUserDataDir() to a "stackcalc" subdir.
+    SetAppName("stackcalc");
     auto* frame = new StackCalcFrame();
     frame->Show(true);
     return true;

@@ -54,6 +54,10 @@ public:
     Trail& trail() { return trail_; }
     const Trail& trail() const { return trail_; }
 
+    // --- Undo manager (used by persistence) ---
+    UndoManager& undo_mgr() { return undo_mgr_; }
+    const UndoManager& undo_mgr() const { return undo_mgr_; }
+
     // --- Last args (M-RET) ---
     const std::vector<ValuePtr>& last_args() const { return last_args_; }
     void set_last_args(std::vector<ValuePtr> args) { last_args_ = std::move(args); }

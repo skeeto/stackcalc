@@ -3,6 +3,7 @@ add_library(stackcalc-controller STATIC
     input_state.cpp
     key_map.cpp
     controller.cpp
+    persistence.cpp
 )
 target_include_directories(stackcalc-controller PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}

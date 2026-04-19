@@ -29,6 +29,7 @@ public:
     Stack& stack() { return stack_; }
     const Stack& stack() const { return stack_; }
     Variables& variables() { return vars_; }
+    const Variables& variables() const { return vars_; }
     InputState& input() { return input_; }
 
 private:

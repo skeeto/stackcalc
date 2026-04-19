@@ -26,6 +26,16 @@ public:
 
     void set_max_depth(size_t n) { max_depth_ = n; }
 
+    // Accessors used by persistence (read full history for save; load-back
+    // bypasses the normal save_state path which would clear redo and cap
+    // max-depth).
+    const std::vector<UndoFrame>& undo_stack() const { return undo_stack_; }
+    const std::vector<UndoFrame>& redo_stack() const { return redo_stack_; }
+    void load(std::vector<UndoFrame> u, std::vector<UndoFrame> r) {
+        undo_stack_ = std::move(u);
+        redo_stack_ = std::move(r);
+    }
+
 private:
     std::vector<UndoFrame> undo_stack_;
     std::vector<UndoFrame> redo_stack_;
