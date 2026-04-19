@@ -8,6 +8,12 @@ target_link_libraries(stackcalc-gui PRIVATE
     wx::base
 )
 
+# Drop the GUI executable (or .app bundle on macOS) into build/bin/
+# instead of build/src/gui/. Test executables stay where they are.
+set_target_properties(stackcalc-gui PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+)
+
 # On Windows, embed our own DPI-aware application manifest so Windows
 # stops bitmap-scaling the window on high-DPI displays.
 if(WIN32)
