@@ -34,4 +34,11 @@ std::vector<ValuePtr> UndoManager::redo(std::vector<ValuePtr> current_stack) {
     return restored;
 }
 
+std::vector<ValuePtr> UndoManager::cancel_save() {
+    if (undo_stack_.empty()) return {};
+    auto restored = std::move(undo_stack_.back().stack_snapshot);
+    undo_stack_.pop_back();
+    return restored;
+}
+
 } // namespace sc

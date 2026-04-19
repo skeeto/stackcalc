@@ -226,23 +226,46 @@ ValuePtr mod(const ValuePtr& a, const ValuePtr& b, int precision) {
 ValuePtr power(const ValuePtr& a, const ValuePtr& b, int precision) {
     if (a->is_mod()) return modulo_form::pow(a->as_mod(), b, precision);
 
-    if (!b->is_integer()) {
-        if (b->is_float()) {
-            auto exp_int = decimal_float::to_integer(b->as_float());
-            if (exp_int.has_value()) {
-                long e = exp_int->get_si();
-                if (a->is_float()) return decimal_float::pow_int(a->as_float(), e, precision);
-                if (a->is_integer()) {
-                    if (e >= 0) return integer::pow(a->as_integer(), static_cast<unsigned long>(e));
-                    auto fa = decimal_float::from_integer(a->as_integer());
-                    return decimal_float::pow_int(fa, e, precision);
-                }
-            }
+    // Coerce a float exponent to an integer if it represents one exactly.
+    const mpz_class* exp_mpz = nullptr;
+    mpz_class exp_storage;
+    if (b->is_integer()) {
+        exp_mpz = &b->as_integer().v;
+    } else if (b->is_float()) {
+        if (auto i = decimal_float::to_integer(b->as_float())) {
+            exp_storage = std::move(*i);
+            exp_mpz = &exp_storage;
         }
+    }
+    if (!exp_mpz) {
         throw std::invalid_argument("non-integer exponent not yet supported");
     }
 
-    long e = b->as_integer().v.get_si();
+    // Special cases that have well-defined results regardless of exponent
+    // magnitude — avoid the get_si() overflow trap for them.
+    if (a->is_integer()) {
+        const auto& base = a->as_integer().v;
+        if (base == 0) {
+            if (*exp_mpz < 0) throw std::domain_error("0 raised to negative power");
+            if (*exp_mpz == 0) return Value::one();
+            return Value::zero();
+        }
+        if (base == 1) return Value::one();
+        if (base == -1) {
+            return mpz_even_p(exp_mpz->get_mpz_t())
+                ? Value::one()
+                : Value::make_integer(mpz_class(-1));
+        }
+    }
+
+    // Detect exponent overflow before truncating to a signed long. mpz's
+    // get_si() silently wraps modulo 2^64 — without this check, e.g.
+    // 16^(2^64) would compute 16^0 = 1 because get_si(2^64) returns 0.
+    if (!exp_mpz->fits_slong_p()) {
+        throw std::overflow_error("exponent too large to compute");
+    }
+    long e = exp_mpz->get_si();
+
     if (a->is_integer()) {
         if (e >= 0) return integer::pow(a->as_integer(), static_cast<unsigned long>(e));
         auto pos = integer::pow(a->as_integer(), static_cast<unsigned long>(-e));

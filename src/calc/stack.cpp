@@ -102,8 +102,14 @@ void Stack::end_command(const std::string& trail_tag, const std::vector<ValuePtr
 }
 
 void Stack::discard_command() {
-    // Nothing to discard with snapshot-based undo
-    in_command_ = false;
+    if (in_command_) {
+        // Restore from the snapshot saved in begin_command and remove that
+        // snapshot from undo history (a failed command shouldn't show up
+        // as a no-op step in the undo chain). Invariant: begin_command
+        // always called save_state, so cancel_save returns that snapshot.
+        stack_ = undo_mgr_.cancel_save();
+        in_command_ = false;
+    }
 }
 
 void Stack::undo() {

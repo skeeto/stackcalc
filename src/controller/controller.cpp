@@ -22,6 +22,7 @@ bool Controller::process_key(const KeyEvent& key) {
             try {
                 execute(*cmd);
             } catch (const std::exception& e) {
+                stack_.discard_command();  // roll back any partial mutation
                 message_ = e.what();
             }
             return true;
@@ -51,6 +52,7 @@ bool Controller::process_key(const KeyEvent& key) {
     try {
         execute(*cmd);
     } catch (const std::exception& e) {
+        stack_.discard_command();  // roll back any partial mutation
         message_ = e.what();
     }
     return true;

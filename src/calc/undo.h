@@ -18,6 +18,12 @@ public:
     bool can_redo() const;
     std::vector<ValuePtr> undo(std::vector<ValuePtr> current_stack);
     std::vector<ValuePtr> redo(std::vector<ValuePtr> current_stack);
+
+    // Aborting a command: returns the most recent saved snapshot and removes
+    // it from the undo stack, so a failed command leaves no trace in history.
+    // Returns an empty vector if nothing is saved.
+    std::vector<ValuePtr> cancel_save();
+
     void set_max_depth(size_t n) { max_depth_ = n; }
 
 private:

@@ -244,3 +244,48 @@ TEST(ControllerTest, HexRadix) {
     auto ds = ctrl.display();
     EXPECT_EQ(ds.stack_entries.back(), "16#FF");
 }
+
+// User-reported: 16, 16, 16 then ^, ^ used to give 1 because the second
+// ^ truncated 16^16 = 2^64 to 0 via mpz::get_si and computed 16^0 = 1.
+TEST(ControllerTest, PowerOverflowReportsErrorAndRestoresStack) {
+    Controller ctrl;
+    feed_chars(ctrl, "16"); feed_special(ctrl, "RET");
+    feed_chars(ctrl, "16"); feed_special(ctrl, "RET");
+    feed_chars(ctrl, "16"); feed_special(ctrl, "RET");
+    feed_chars(ctrl, "^");  // 16^16 succeeds -> stack: [16, 2^64]
+    EXPECT_EQ(ctrl.display().stack_depth, 2);
+    feed_chars(ctrl, "^");  // 16^(2^64) overflows
+    auto ds = ctrl.display();
+    // The bad operation must NOT silently produce 1.
+    EXPECT_FALSE(ds.message.empty()) << "expected an overflow error message";
+    EXPECT_NE(ds.stack_entries.back(), "1");
+    // And the stack must be restored to the pre-command state.
+    EXPECT_EQ(ds.stack_depth, 2);
+}
+
+// Generic: an error in any binary op rolls the stack back to its
+// pre-command state. Use 1/0 (division by zero) as a clean trigger.
+TEST(ControllerTest, FailedBinaryOpRestoresStack) {
+    Controller ctrl;
+    feed_chars(ctrl, "1"); feed_special(ctrl, "RET");
+    feed_chars(ctrl, "0"); feed_special(ctrl, "RET");
+    feed_chars(ctrl, "/");
+    auto ds = ctrl.display();
+    EXPECT_FALSE(ds.message.empty());
+    EXPECT_EQ(ds.stack_depth, 2);
+    EXPECT_EQ(ds.stack_entries[0], "1");
+    EXPECT_EQ(ds.stack_entries[1], "0");
+}
+
+// Special cases: even with huge exponents, base 0/±1 have well-defined results.
+TEST(ControllerTest, PowerSpecialCasesSurviveHugeExponent) {
+    Controller ctrl;
+    // 0 ^ (2^64) = 0
+    feed_chars(ctrl, "0");  feed_special(ctrl, "RET");
+    feed_chars(ctrl, "16"); feed_special(ctrl, "RET");
+    feed_chars(ctrl, "16"); feed_special(ctrl, "RET");
+    feed_chars(ctrl, "^");  // builds 2^64
+    feed_chars(ctrl, "^");  // 0 ^ (2^64) = 0
+    EXPECT_EQ(ctrl.display().stack_entries.back(), "0");
+    EXPECT_TRUE(ctrl.display().message.empty());
+}
