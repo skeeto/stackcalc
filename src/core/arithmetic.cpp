@@ -298,6 +298,9 @@ ValuePtr power(const ValuePtr& a, const ValuePtr& b, int precision) {
     if (a->tag() == Tag::RectComplex) {
         return complex::pow(a->as_rect_complex(), e, precision);
     }
+    if (a->is_interval()) {
+        return interval::pow(a->as_interval(), e, precision);
+    }
     throw std::invalid_argument("unsupported type for power");
 }
 

@@ -105,4 +105,29 @@ ValuePtr abs(const Interval& a, int precision) {
     return Value::make_interval(a.mask, std::move(abs_lo), std::move(abs_hi));
 }
 
+ValuePtr pow(const Interval& a, long n, int precision) {
+    if (n == 0) {
+        // a^0 = [1, 1] (using the convention 0^0 = 1).
+        return Value::make_interval(3, Value::one(), Value::one());
+    }
+    bool negative_exp = n < 0;
+    long m = negative_exp ? -n : n;
+
+    // Repeated multiplication. The mul() routine already handles
+    // sign-flips correctly for intervals straddling zero (computes all
+    // four corner products and takes min/max), so we get the right answer
+    // even when the base interval includes negative numbers.
+    Interval cur = a;
+    for (long i = 1; i < m; ++i) {
+        auto v = mul(cur, a, precision);
+        cur = v->as_interval();
+    }
+    auto val = Value::make_interval(cur.mask, cur.lo, cur.hi);
+    if (!negative_exp) return val;
+
+    // For negative exponent, divide [1,1] by the result.
+    Interval one_iv{3, Value::one(), Value::one()};
+    return div(one_iv, val->as_interval(), precision);
+}
+
 } // namespace sc::interval

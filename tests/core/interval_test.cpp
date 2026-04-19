@@ -129,3 +129,40 @@ TEST(IntervalTest, ArithDispatch) {
     EXPECT_EQ(r->as_interval().lo->as_integer().v, 3);
     EXPECT_EQ(r->as_interval().hi->as_integer().v, 7);
 }
+
+// --- Power ---
+
+TEST(IntervalTest, PowZero) {
+    Interval a{3, Value::make_integer(2), Value::make_integer(5)};
+    auto r = interval::pow(a, 0, 12);
+    ASSERT_TRUE(r->is_interval());
+    EXPECT_EQ(r->as_interval().lo->as_integer().v, 1);
+    EXPECT_EQ(r->as_interval().hi->as_integer().v, 1);
+}
+
+TEST(IntervalTest, PowPositive) {
+    // [2..3]^3 = [8..27]
+    Interval a{3, Value::make_integer(2), Value::make_integer(3)};
+    auto r = interval::pow(a, 3, 12);
+    ASSERT_TRUE(r->is_interval());
+    auto& iv = r->as_interval();
+    EXPECT_EQ(iv.lo->as_integer().v, 8);
+    EXPECT_EQ(iv.hi->as_integer().v, 27);
+}
+
+TEST(IntervalTest, PowSpansZeroEven) {
+    // [-2..3] * [-2..3] worst-case from corner products = [-6..9]
+    Interval a{3, Value::make_integer(-2), Value::make_integer(3)};
+    auto r = interval::pow(a, 2, 12);
+    auto& iv = r->as_interval();
+    EXPECT_EQ(iv.lo->as_integer().v, -6);
+    EXPECT_EQ(iv.hi->as_integer().v, 9);
+}
+
+TEST(IntervalTest, ArithPowerDispatch) {
+    auto a = Value::make_interval(3, Value::make_integer(2), Value::make_integer(3));
+    auto r = arith::power(a, Value::make_integer(3), 12);
+    ASSERT_TRUE(r->is_interval());
+    EXPECT_EQ(r->as_interval().lo->as_integer().v, 8);
+    EXPECT_EQ(r->as_interval().hi->as_integer().v, 27);
+}
