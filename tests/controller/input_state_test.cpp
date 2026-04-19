@@ -74,6 +74,49 @@ TEST(InputStateTest, ScientificNotation) {
     EXPECT_NEAR(val, 1500.0, 1e-8);
 }
 
+TEST(InputStateTest, NegativeExponentViaMinus) {
+    // '-' immediately after 'e' is unambiguous: must be the exponent sign,
+    // can't be the subtract operator. So "1e-3" should Just Work.
+    InputState is;
+    CalcState state;
+    EXPECT_TRUE(is.feed('1', state));
+    EXPECT_TRUE(is.feed('e', state));
+    EXPECT_TRUE(is.feed('-', state));
+    EXPECT_TRUE(is.feed('3', state));
+    EXPECT_EQ(is.text(), "1e-3");
+    auto v = is.finalize(state);
+    ASSERT_TRUE(v);
+    auto& f = v->as_float();
+    double val = f.mantissa.get_d() * std::pow(10.0, f.exponent);
+    EXPECT_NEAR(val, 0.001, 1e-15);
+}
+
+TEST(InputStateTest, PositiveExponentViaPlus) {
+    InputState is;
+    CalcState state;
+    EXPECT_TRUE(is.feed('2', state));
+    EXPECT_TRUE(is.feed('e', state));
+    EXPECT_TRUE(is.feed('+', state));
+    EXPECT_TRUE(is.feed('5', state));
+    EXPECT_EQ(is.text(), "2e+5");
+    auto v = is.finalize(state);
+    ASSERT_TRUE(v);
+    auto& f = v->as_float();
+    double val = f.mantissa.get_d() * std::pow(10.0, f.exponent);
+    EXPECT_NEAR(val, 200000.0, 1e-8);
+}
+
+TEST(InputStateTest, MinusOutsideExponentNotConsumed) {
+    // After a digit (not after 'e'), '-' is the subtract operator and
+    // must not be consumed as part of the entry.
+    InputState is;
+    CalcState state;
+    is.feed('1', state);
+    is.feed('2', state);
+    EXPECT_FALSE(is.feed('-', state));
+    EXPECT_EQ(is.text(), "12");
+}
+
 TEST(InputStateTest, Fraction) {
     InputState is;
     CalcState state;

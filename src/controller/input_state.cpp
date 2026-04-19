@@ -59,6 +59,16 @@ bool InputState::feed(char ch, const CalcState& state) {
         }
     }
 
+    // '-' or '+' immediately after the exponent marker is unambiguous (we're
+    // mid-number-entry, can't be the binary subtract/add operator), so let
+    // them join the entry. This makes typing "1e-3" Just Work; without it,
+    // the '-' would dispatch as subtract and finalize an incomplete "1e".
+    if ((ch == '-' || ch == '+') && radix == 10 && active_ &&
+        !text_.empty() && (text_.back() == 'e' || text_.back() == 'E')) {
+        text_ += ch;
+        return true;
+    }
+
     if (ch == '_') {
         // Negative sign in number entry
         if (!active_) {
