@@ -127,7 +127,12 @@ StackCalcFrame::StackCalcFrame()
     SetSizer(sizer);
 
     build_menus();
-    panel_->SetFocus();
+    // Focus has to be set after the frame is shown — on Windows, SetFocus
+    // before Show() is silently ignored and the OS picks its own default
+    // child (often the splitter), leaving keystrokes nowhere to land.
+    // CallAfter defers until the event loop is running and the frame is
+    // realized.
+    CallAfter([this] { panel_->focus_calc(); });
 
     // Try to restore saved session. If we got a window size and sash from
     // the saved state, use those; otherwise fall back to centering and a
@@ -198,7 +203,7 @@ void StackCalcFrame::build_menus() {
             try { panel_->controller().process_key(sc::KeyEvent::special(name)); }
             catch (...) {}
             panel_->redraw();
-            panel_->SetFocus();
+            panel_->focus_calc();
         }, id);
     };
     auto add_modified = [&](wxMenu* m, const wxString& label, const char* name) {
@@ -208,7 +213,7 @@ void StackCalcFrame::build_menus() {
             try { panel_->controller().process_key(sc::KeyEvent::modified(name)); }
             catch (...) {}
             panel_->redraw();
-            panel_->SetFocus();
+            panel_->focus_calc();
         }, id);
     };
     add_special (edit, "&Drop (Back)",            "DEL");
@@ -575,7 +580,15 @@ void CalcPanel::dispatch_keys(const std::string& keys) {
         } catch (...) { /* defensive — Controller already handles errors */ }
     }
     redraw();
-    SetFocus();
+    focus_calc();
+}
+
+// Drop focus onto the actual focusable child. wxPanel itself can be
+// focused but that doesn't help on Windows, where the OS-managed focus
+// after Show() prefers a real control. Targeting stack_ctrl_ keeps
+// keystrokes flowing through the CHAR_HOOK + EVT_CHAR pipeline.
+void CalcPanel::focus_calc() {
+    if (stack_ctrl_) stack_ctrl_->SetFocus();
 }
 
 void CalcPanel::redraw() {

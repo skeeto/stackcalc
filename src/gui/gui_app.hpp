@@ -76,6 +76,11 @@ public:
     // Wired up by StackCalcFrame after the splitter creates both panes.
     void set_trail_panel(TrailPanel* tp) { trail_panel_ = tp; }
 
+    // Send keyboard focus to a calc-input-receiving child. Used by the
+    // frame after Show(); SetFocus on a wxPanel doesn't always reach the
+    // right child on Windows, so we target the actual focusable widget.
+    void focus_calc();
+
     // Re-render after state change.
     void redraw();
 
