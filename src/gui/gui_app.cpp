@@ -645,12 +645,21 @@ void CalcPanel::dispatch_key(const sc::KeyEvent& k) {
 // on_done callback (worker thread) builds the display snapshot and
 // then marshals to the UI via wxCallAfter for the actual repaint.
 //
-// Why the snapshot is built on the worker, not the UI thread: for
-// huge stack values (e.g. 2^100000 → ~30 000 decimal digits),
-// mpz_get_str inside the formatter takes seconds. If the UI thread
-// did it, the window would freeze. The worker is already off the UI
-// thread and its Section has ended by on_done time, so allocations
-// during display() don't trip the cancel hook.
+// Both the work AND the formatting are cancellable:
+//
+//   - work() runs in the runner's own Section (set up by CalcRunner).
+//     Ctrl+G during compute trips the next GMP allocation.
+//
+//   - display() is wrapped in a fresh Section here. Ctrl+G during
+//     formatting trips an mpz_get_str allocation. On cancel, we undo
+//     the just-completed work and reuse the pre-submit snapshot
+//     (captured into pre_snapshot) — no re-format needed, so the
+//     post-cancel UI update is instant.
+//
+// pre_snapshot is the cached display from BEFORE submitting; the
+// stack at that moment matches the begin_command snapshot the
+// controller's undo machinery saved, so undo + pre_snapshot keeps
+// the displayed state and the actual stack consistent.
 //
 // The alive flag (captured by value) gates both the worker callback
 // and the UI-thread callback against `this` having been destroyed
@@ -658,17 +667,40 @@ void CalcPanel::dispatch_key(const sc::KeyEvent& k) {
 void CalcPanel::submit_work(std::function<void()> work) {
     busy_ = true;
     overlay_timer_.StartOnce(150);  // delay before "Computing…" overlay
-    auto alive = alive_;
-    auto snapshot = std::make_shared<sc::DisplayState>();
+    auto alive        = alive_;
+    auto snapshot     = std::make_shared<sc::DisplayState>();
+    auto pre_snapshot = std::make_shared<sc::DisplayState>(cached_display_);
     runner_.submit(
         [this, work = std::move(work)] { work(); },
-        [this, alive, snapshot](sc::CalcRunner::Outcome, std::exception_ptr) {
+        [this, alive, snapshot, pre_snapshot](
+                sc::CalcRunner::Outcome, std::exception_ptr) {
             if (!alive->load()) return;
-            // Safe to call display() here: the worker's Section ended
-            // when the lambda invoked work(), and we're still on the
-            // worker thread (off the UI). Slow formatting happens here
-            // without freezing the window.
-            *snapshot = ctrl_.display();
+
+            // Format the new state. The runner cleared the cancel
+            // flag before invoking on_done, so this Section starts
+            // clean — but a fresh Ctrl+G arriving NOW will set it
+            // and trip mpz_get_str's allocations.
+            bool format_cancelled = false;
+            {
+                sc::cancel::Section s;
+                try {
+                    *snapshot = ctrl_.display();
+                } catch (const sc::CancelledException&) {
+                    format_cancelled = true;
+                }
+            }
+
+            if (format_cancelled) {
+                // User asked to abort while formatting. Undo the
+                // work() so the stack matches pre_snapshot, then use
+                // pre_snapshot directly (no second format pass).
+                sc::cancel::reset();
+                try { ctrl_.process_key(sc::KeyEvent::character('U')); }
+                catch (...) {}
+                *snapshot = *pre_snapshot;
+                snapshot->message = "Cancelled — operation undone";
+            }
+
             CallAfter([this, alive, snapshot]{
                 if (!alive->load()) return;
                 apply_snapshot_and_redraw(std::move(*snapshot));
