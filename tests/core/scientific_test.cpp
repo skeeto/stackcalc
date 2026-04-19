@@ -2,6 +2,7 @@
 #include "scientific.h"
 #include "constants.h"
 #include <cmath>
+#include <numbers>
 
 using namespace sc;
 
@@ -281,5 +282,5 @@ TEST(ScientificTest, GammaIntegerEqualsFactorial) {
 TEST(ScientificTest, GammaHalfEqualsSqrtPi) {
     // gamma(1/2) = sqrt(pi) ≈ 1.77245385091
     auto r = scientific::gamma_fn(Value::make_float(5, -1), 20);
-    expect_near(r, std::sqrt(M_PI), 1e-10);
+    expect_near(r, std::sqrt(std::numbers::pi), 1e-10);
 }
