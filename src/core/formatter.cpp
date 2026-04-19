@@ -48,6 +48,23 @@ std::string Formatter::group_digits(const std::string& digits, bool after_point)
 }
 
 std::string Formatter::format_integer_str(const mpz_class& v) const {
+    // Pre-flight size check. mpz_get_str (called by mpz_class::get_str)
+    // is hundreds of milliseconds for ~500 000-digit integers, and the
+    // calculator re-renders the entire stack on every keystroke — so a
+    // single huge value on the stack makes typing feel like the app
+    // froze. Substitute a placeholder once the digit count exceeds a
+    // threshold larger than anything readable. mpz_sizeinbase is O(1)
+    // so this check itself is free.
+    //
+    // Threshold matches the GUI's render cap (8192 chars) — anything
+    // that would be replaced at render time anyway, we don't bother
+    // formatting in the first place. The underlying value is unaffected.
+    constexpr size_t kMaxFormatDigits = 8000;
+    size_t digit_count = mpz_sizeinbase(v.get_mpz_t(), 10);
+    if (digit_count > kMaxFormatDigits) {
+        return "<integer: " + std::to_string(digit_count) + " digits>";
+    }
+
     if (state_.display_radix == 10) {
         std::string s = v.get_str(10);
         // Separate sign from digits for grouping
