@@ -3,7 +3,10 @@
 #include "constants.hpp"
 #include "arithmetic.hpp"
 #include "integer.hpp"
+#include "mpz_int64.hpp"
 #include <chrono>
+#include <climits>
+#include <cstdint>
 #include <stdexcept>
 
 namespace sc::scientific {
@@ -130,11 +133,11 @@ ValuePtr factorial(const ValuePtr& a, int precision) {
     if (a->is_integer()) {
         auto& v = a->as_integer().v;
         if (v < 0) throw std::domain_error("factorial of negative integer");
-        if (!v.fits_ulong_p()) throw std::overflow_error("factorial argument too large");
-        unsigned long n = v.get_ui();
-        mpz_class result;
-        mpz_fac_ui(result.get_mpz_t(), n);
-        return Value::make_integer(std::move(result));
+        if (!sc::mpz_fits_uint64(v)) throw std::overflow_error("factorial argument too large");
+        // integer::factorial accepts uint64 and falls back to a manual
+        // loop when the value exceeds the platform's `unsigned long`,
+        // so the threshold matches across LP64/LLP64.
+        return integer::factorial(sc::mpz_get_uint64(v));
     }
     // Non-integer: use gamma function, n! = gamma(n+1)
     auto n_plus_1 = arith::add(a, Value::one(), precision);
@@ -153,10 +156,29 @@ ValuePtr double_factorial(const ValuePtr& a) {
     if (!a->is_integer()) throw std::domain_error("double factorial requires integer");
     auto& v = a->as_integer().v;
     if (v < 0) throw std::domain_error("double factorial of negative integer");
-    if (!v.fits_ulong_p()) throw std::overflow_error("double factorial argument too large");
-    unsigned long n = v.get_ui();
-    mpz_class result;
-    mpz_2fac_ui(result.get_mpz_t(), n);
+    if (!sc::mpz_fits_uint64(v)) throw std::overflow_error("double factorial argument too large");
+    std::uint64_t n = sc::mpz_get_uint64(v);
+    if (n <= static_cast<std::uint64_t>(ULONG_MAX)) {
+        mpz_class result;
+        mpz_2fac_ui(result.get_mpz_t(), static_cast<unsigned long>(n));
+        return Value::make_integer(std::move(result));
+    }
+    // LLP64 fallback: n exceeds `unsigned long`. Compute n!! as
+    // n*(n-2)*(n-4)*... by hand. (Astronomical for n > 2^32; matches
+    // the LP64 behaviour where mpz_2fac_ui would also be unhappy.)
+    mpz_class result(1);
+    for (std::uint64_t i = n; i > 1; i -= 2) {
+        if (i <= static_cast<std::uint64_t>(ULONG_MAX)) {
+            result *= mpz_class(static_cast<unsigned long>(i));
+        } else {
+            mpz_class big;
+            mpz_set_ui(big.get_mpz_t(), static_cast<unsigned long>(i >> 32));
+            mpz_mul_2exp(big.get_mpz_t(), big.get_mpz_t(), 32);
+            mpz_add_ui(big.get_mpz_t(), big.get_mpz_t(),
+                       static_cast<unsigned long>(i & 0xFFFFFFFFu));
+            result *= big;
+        }
+    }
     return Value::make_integer(std::move(result));
 }
 
@@ -165,11 +187,19 @@ ValuePtr choose(const ValuePtr& n, const ValuePtr& m, int precision) {
         auto& nv = n->as_integer().v;
         auto& mv = m->as_integer().v;
         if (mv < 0 || nv < mv) return Value::zero();
-        if (!mv.fits_ulong_p()) throw std::overflow_error("choose argument too large");
-        unsigned long k = mv.get_ui();
-        mpz_class result;
-        mpz_bin_ui(result.get_mpz_t(), nv.get_mpz_t(), k);
-        return Value::make_integer(std::move(result));
+        if (!sc::mpz_fits_uint64(mv)) throw std::overflow_error("choose argument too large");
+        std::uint64_t k = sc::mpz_get_uint64(mv);
+        if (k <= static_cast<std::uint64_t>(ULONG_MAX)) {
+            mpz_class result;
+            mpz_bin_ui(result.get_mpz_t(), nv.get_mpz_t(),
+                       static_cast<unsigned long>(k));
+            return Value::make_integer(std::move(result));
+        }
+        // LLP64 fallback: compute prod_{i=0..k-1} (n-i) / k! via the
+        // permutation/factorial route.
+        auto perm = permutation(n, m, precision);
+        auto fact = factorial(m, precision);
+        return arith::div(perm, fact, precision, FractionMode::Float);
     }
     // General case: n! / (m! * (n-m)!)
     auto n_fact = factorial(n, precision);
@@ -185,12 +215,12 @@ ValuePtr permutation(const ValuePtr& n, const ValuePtr& m, int precision) {
         auto& nv = n->as_integer().v;
         auto& mv = m->as_integer().v;
         if (mv < 0 || nv < mv) return Value::zero();
-        if (!mv.fits_ulong_p()) throw std::overflow_error("permutation argument too large");
-        unsigned long k = mv.get_ui();
+        if (!sc::mpz_fits_uint64(mv)) throw std::overflow_error("permutation argument too large");
+        std::uint64_t k = sc::mpz_get_uint64(mv);
         // n * (n-1) * ... * (n-k+1)
         mpz_class result(1);
         mpz_class cur = nv;
-        for (unsigned long i = 0; i < k; ++i) {
+        for (std::uint64_t i = 0; i < k; ++i) {
             result *= cur;
             cur -= 1;
         }

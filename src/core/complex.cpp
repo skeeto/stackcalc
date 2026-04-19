@@ -1,5 +1,7 @@
 #include "complex.hpp"
 #include "arithmetic.hpp"
+#include <climits>
+#include <cstdint>
 
 namespace sc::complex {
 
@@ -102,14 +104,24 @@ ValuePtr sqrt(const RectComplex& a, int precision) {
     return Value::make_rect_complex(std::move(re), std::move(im));
 }
 
-ValuePtr pow(const RectComplex& a, long n, int precision) {
+ValuePtr pow(const RectComplex& a, std::int64_t n, int precision) {
     if (n == 0) return Value::one();
     if (n == 1) return Value::make_rect_complex(a.re, a.im);
     if (n < 0) {
         auto recip = inv(a, precision);
+        // For INT64_MIN we can't negate without overflow, so build the
+        // mpz exponent directly from the magnitude.
+        mpz_class abs_exp;
+        if (n == INT64_MIN) {
+            // |INT64_MIN| = 2^63
+            mpz_ui_pow_ui(abs_exp.get_mpz_t(), 2, 63);
+        } else {
+            mpz_set_si(abs_exp.get_mpz_t(), -n);
+        }
         // recip might collapse to a real if a.im was zero; let arith::power
         // handle the recursion either way.
-        return arith::power(recip, Value::make_integer(-n), precision);
+        return arith::power(recip, Value::make_integer(std::move(abs_exp)),
+                            precision);
     }
     // Binary exponentiation through arith::mul (which dispatches on the
     // result type at each step — products of complexes can collapse to real).

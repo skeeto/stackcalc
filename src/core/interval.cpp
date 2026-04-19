@@ -1,6 +1,8 @@
 #include "interval.hpp"
 #include "arithmetic.hpp"
 #include <algorithm>
+#include <climits>
+#include <cstdint>
 
 namespace sc::interval {
 
@@ -105,20 +107,23 @@ ValuePtr abs(const Interval& a, int precision) {
     return Value::make_interval(a.mask, std::move(abs_lo), std::move(abs_hi));
 }
 
-ValuePtr pow(const Interval& a, long n, int precision) {
+ValuePtr pow(const Interval& a, std::int64_t n, int precision) {
     if (n == 0) {
         // a^0 = [1, 1] (using the convention 0^0 = 1).
         return Value::make_interval(3, Value::one(), Value::one());
     }
     bool negative_exp = n < 0;
-    long m = negative_exp ? -n : n;
+    // Use uint64 magnitude so INT64_MIN doesn't overflow.
+    std::uint64_t m = (n == INT64_MIN)
+        ? static_cast<std::uint64_t>(INT64_MAX) + 1
+        : static_cast<std::uint64_t>(negative_exp ? -n : n);
 
     // Repeated multiplication. The mul() routine already handles
     // sign-flips correctly for intervals straddling zero (computes all
     // four corner products and takes min/max), so we get the right answer
     // even when the base interval includes negative numbers.
     Interval cur = a;
-    for (long i = 1; i < m; ++i) {
+    for (std::uint64_t i = 1; i < m; ++i) {
         auto v = mul(cur, a, precision);
         cur = v->as_interval();
     }

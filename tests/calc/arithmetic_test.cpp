@@ -225,6 +225,30 @@ TEST_F(ArithmeticTest, PowNegativeBaseNonIntegerExpIsNaN) {
     EXPECT_EQ(s.top()->as_infinity().kind, Infinity::NaN);
 }
 
+// --- Power: cross-platform exponent threshold ---
+
+TEST_F(ArithmeticTest, PowExponentJustBeyondInt64MaxThrows) {
+    // INT64_MAX + 1 doesn't fit in int64, so the threshold check
+    // throws on every platform. (The previous platform-divergent
+    // threshold was tied to mpz_fits_slong_p, which on Windows
+    // tripped at 2^31 instead of 2^63.)
+    push_int(2);
+    s.push(Value::make_integer(mpz_class("9223372036854775808")));
+    EXPECT_THROW(ops::power(s), std::overflow_error);
+}
+
+TEST_F(ArithmeticTest, PowExponentAtInt64MaxThrowsIsAccepted) {
+    // INT64_MAX itself fits in int64, so the threshold check passes.
+    // We can't actually compute 1^INT64_MAX without a special-case
+    // shortcut, but base=1 short-circuits before the threshold check
+    // anyway — this is a smoke test that the call doesn't throw the
+    // threshold error.
+    push_int(1);
+    s.push(Value::make_integer(mpz_class("9223372036854775807")));
+    EXPECT_NO_THROW(ops::power(s));
+    EXPECT_EQ(s.top()->as_integer().v, 1);
+}
+
 // --- Unary ---
 
 TEST_F(ArithmeticTest, Neg) {

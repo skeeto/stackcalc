@@ -11,6 +11,8 @@
 #include "infinity.hpp"
 #include "vector.hpp"
 #include "mpfr_bridge.hpp"
+#include "mpz_int64.hpp"
+#include <cstdint>
 #include <mpfr.h>
 
 namespace sc::arith {
@@ -268,31 +270,43 @@ ValuePtr power(const ValuePtr& a, const ValuePtr& b, int precision) {
         }
     }
 
-    // Detect exponent overflow before truncating to a signed long. mpz's
-    // get_si() silently wraps modulo 2^64 — without this check, e.g.
-    // 16^(2^64) would compute 16^0 = 1 because get_si(2^64) returns 0.
-    if (!exp_mpz->fits_slong_p()) {
+    // Detect exponent overflow before truncating. mpz's get_si() silently
+    // wraps modulo 2^(sizeof(long)*8) — without this check, e.g.
+    // 16^(2^64) would compute 16^0 = 1. We bound at int64_t (rather than
+    // the platform's `long`) so the threshold doesn't shift between
+    // LP64 and LLP64.
+    if (!sc::mpz_fits_sint64(*exp_mpz)) {
         throw std::overflow_error("exponent too large to compute");
     }
-    long e = exp_mpz->get_si();
+    std::int64_t e = sc::mpz_get_sint64(*exp_mpz);
+
+    // Helper: int64_t magnitude of `e`, INT64_MIN-safe.
+    auto abs_u64 = [](std::int64_t x) -> std::uint64_t {
+        return (x == INT64_MIN)
+            ? static_cast<std::uint64_t>(INT64_MAX) + 1
+            : static_cast<std::uint64_t>(x < 0 ? -x : x);
+    };
 
     if (a->is_integer()) {
-        if (e >= 0) return integer::pow(a->as_integer(), static_cast<unsigned long>(e));
-        auto pos = integer::pow(a->as_integer(), static_cast<unsigned long>(-e));
+        if (e >= 0) return integer::pow(a->as_integer(),
+                                        static_cast<std::uint64_t>(e));
+        auto pos = integer::pow(a->as_integer(), abs_u64(e));
         return Value::make_fraction(mpz_class(1), pos->as_integer().v);
     }
     if (a->is_fraction()) {
         auto& f = a->as_fraction();
+        std::uint64_t mag = (e >= 0) ? static_cast<std::uint64_t>(e) : abs_u64(e);
+        // integer::pow handles uint64 exponents (with an LLP64 fallback).
+        // Reuse it instead of calling mpz_pow_ui directly, so the
+        // numerator/denominator paths share the same width handling.
+        auto num_pow = integer::pow(Integer{f.num}, mag);
+        auto den_pow = integer::pow(Integer{f.den}, mag);
         if (e >= 0) {
-            mpz_class rn, rd;
-            mpz_pow_ui(rn.get_mpz_t(), f.num.get_mpz_t(), static_cast<unsigned long>(e));
-            mpz_pow_ui(rd.get_mpz_t(), f.den.get_mpz_t(), static_cast<unsigned long>(e));
-            return Value::make_fraction(std::move(rn), std::move(rd));
+            return Value::make_fraction(num_pow->as_integer().v,
+                                        den_pow->as_integer().v);
         }
-        mpz_class rn, rd;
-        mpz_pow_ui(rn.get_mpz_t(), f.den.get_mpz_t(), static_cast<unsigned long>(-e));
-        mpz_pow_ui(rd.get_mpz_t(), f.num.get_mpz_t(), static_cast<unsigned long>(-e));
-        return Value::make_fraction(std::move(rn), std::move(rd));
+        return Value::make_fraction(den_pow->as_integer().v,
+                                    num_pow->as_integer().v);
     }
     if (a->is_float()) return decimal_float::pow_int(a->as_float(), e, precision);
     if (a->tag() == Tag::RectComplex) {

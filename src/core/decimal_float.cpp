@@ -1,6 +1,8 @@
 #include "decimal_float.hpp"
-#include <stdexcept>
 #include <algorithm>
+#include <climits>
+#include <cstdint>
+#include <stdexcept>
 
 namespace sc::decimal_float {
 
@@ -195,17 +197,39 @@ ValuePtr mod(const DecimalFloat& a, const DecimalFloat& b, int precision) {
     return sub(a, bq->as_float(), precision);
 }
 
-ValuePtr pow_int(const DecimalFloat& base, long exp, int precision) {
+ValuePtr pow_int(const DecimalFloat& base, std::int64_t exp, int precision) {
     if (exp == 0) return Value::make_float(mpz_class(1), 0);
     if (exp < 0) {
-        auto pos = pow_int(base, -exp, precision);
+        // Watch for INT64_MIN: -INT64_MIN overflows, but we can recurse
+        // through uint64 magnitude instead. In practice an int64 exp this
+        // extreme is unreachable from arith::power (which range-checks
+        // its mpz exponent against int64), but be defensive.
+        std::uint64_t mag = (exp == INT64_MIN)
+            ? static_cast<std::uint64_t>(INT64_MAX) + 1
+            : static_cast<std::uint64_t>(-exp);
+        // Manual loop on the magnitude.
+        DecimalFloat result{mpz_class(1), 0};
+        DecimalFloat b = base;
+        while (mag > 0) {
+            if (mag & 1) {
+                auto r = mul(result, b, precision);
+                result = r->as_float();
+            }
+            mag >>= 1;
+            if (mag > 0) {
+                auto r = mul(b, b, precision);
+                b = r->as_float();
+            }
+        }
+        auto pos = Value::make_float_normalized(result.mantissa,
+                                                result.exponent, precision);
         DecimalFloat one_f{mpz_class(1), 0};
         return div(one_f, pos->as_float(), precision);
     }
     // Binary exponentiation
     DecimalFloat result{mpz_class(1), 0};
     DecimalFloat b = base;
-    long e = exp;
+    std::int64_t e = exp;
     while (e > 0) {
         if (e & 1) {
             auto r = mul(result, b, precision);

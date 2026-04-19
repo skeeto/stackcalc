@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include "value.hpp"
 
 namespace sc {
@@ -32,7 +33,7 @@ ValuePtr inv(const RectComplex& a, int precision);
 ValuePtr sqrt(const RectComplex& a, int precision);
 
 // Integer power via binary exponentiation
-ValuePtr pow(const RectComplex& a, long n, int precision);
+ValuePtr pow(const RectComplex& a, std::int64_t n, int precision);
 
 } // namespace complex
 } // namespace sc

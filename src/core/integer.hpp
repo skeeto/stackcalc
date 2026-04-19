@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include "value.hpp"
 
 namespace sc {
@@ -26,12 +27,17 @@ ValuePtr mod(const Integer& a, const Integer& b);
 ValuePtr neg(const Integer& a);
 ValuePtr abs(const Integer& a);
 
-ValuePtr pow(const Integer& base, unsigned long exp);
+// `exp` is uint64_t for cross-platform parity. On LLP64 (Windows) where
+// `unsigned long` is 32-bit, we fall back from mpz_pow_ui to manual
+// exponentiation by squaring for exp > ULONG_MAX.
+ValuePtr pow(const Integer& base, std::uint64_t exp);
 
 ValuePtr gcd(const Integer& a, const Integer& b);
 ValuePtr lcm(const Integer& a, const Integer& b);
 
-ValuePtr factorial(unsigned long n);
+// Same width-portability story: uint64_t in, manual loop fallback when
+// the value exceeds the platform's `unsigned long`.
+ValuePtr factorial(std::uint64_t n);
 
 // Compare: returns -1, 0, or 1
 int cmp(const Integer& a, const Integer& b);

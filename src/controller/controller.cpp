@@ -4,7 +4,9 @@
 #include "constants.hpp"
 #include "vector.hpp"
 #include "bitwise.hpp"
+#include "mpz_int64.hpp"
 #include <cctype>
+#include <cstdint>
 #include <sstream>
 
 namespace {
@@ -436,7 +438,15 @@ void Controller::execute(const std::string& command) {
         auto args = stack_.pop_n(2);
         if (!args[1]->is_integer())
             throw std::invalid_argument("shift amount must be integer");
-        int bits = static_cast<int>(args[1]->as_integer().v.get_si());
+        // Range-check via int64 first so the cast to int doesn't depend
+        // on the platform's `long` width.
+        auto& bits_mpz = args[1]->as_integer().v;
+        if (!sc::mpz_fits_sint64(bits_mpz))
+            throw std::invalid_argument("shift amount out of range");
+        std::int64_t bits64 = sc::mpz_get_sint64(bits_mpz);
+        if (bits64 < INT_MIN || bits64 > INT_MAX)
+            throw std::invalid_argument("shift amount out of range");
+        int bits = static_cast<int>(bits64);
         ValuePtr r;
         const char* tag;
         if (command == "lshift") {
@@ -469,9 +479,11 @@ void Controller::execute(const std::string& command) {
             stack_.begin_command();
             auto v = stack_.pop();
             if (v->is_integer()) {
-                int w = static_cast<int>(v->as_integer().v.get_si());
-                if (w >= 1 && w <= 1024) {
-                    state.word_size = w;
+                auto& mpz = v->as_integer().v;
+                bool in_range = sc::mpz_fits_sint64(mpz);
+                std::int64_t w64 = in_range ? sc::mpz_get_sint64(mpz) : 0;
+                if (in_range && w64 >= 1 && w64 <= 1024) {
+                    state.word_size = static_cast<int>(w64);
                     stack_.end_command("wsz", {});
                 } else {
                     stack_.discard_command();
@@ -516,7 +528,9 @@ void Controller::execute(const std::string& command) {
         if (stack_.size() == 0) { message_ = "Stack underflow"; return; }
         auto a = stack_.elements().back();
         auto r = scientific::prime_test(a);
-        int v = static_cast<int>(r->as_integer().v.get_si());
+        // prime_test returns 0/1/2; trivially fits in int but use the
+        // width-stable extractor for consistency across the file.
+        int v = static_cast<int>(sc::mpz_get_sint64(r->as_integer().v));
         if (v == 2) message_ = "Definitely prime";
         else if (v == 1) message_ = "Probably prime";
         else message_ = "Not prime";
@@ -592,9 +606,11 @@ void Controller::execute(const std::string& command) {
             stack_.begin_command();
             auto v = stack_.pop();
             if (v->is_integer()) {
-                int r = static_cast<int>(v->as_integer().v.get_si());
-                if (r >= 2 && r <= 36) {
-                    change_radix(r);
+                auto& mpz = v->as_integer().v;
+                bool in_range = sc::mpz_fits_sint64(mpz);
+                std::int64_t r64 = in_range ? sc::mpz_get_sint64(mpz) : 0;
+                if (in_range && r64 >= 2 && r64 <= 36) {
+                    change_radix(static_cast<int>(r64));
                     stack_.end_command("rdx", {});
                 } else {
                     stack_.discard_command();
@@ -638,9 +654,11 @@ void Controller::execute(const std::string& command) {
             stack_.begin_command();
             auto v = stack_.pop();
             if (v->is_integer()) {
-                int p = static_cast<int>(v->as_integer().v.get_si());
-                if (p >= 1 && p <= 1000) {
-                    state.precision = p;
+                auto& mpz = v->as_integer().v;
+                bool in_range = sc::mpz_fits_sint64(mpz);
+                std::int64_t p64 = in_range ? sc::mpz_get_sint64(mpz) : 0;
+                if (in_range && p64 >= 1 && p64 <= 1000) {
+                    state.precision = static_cast<int>(p64);
                     stack_.end_command("prec", {});
                 } else {
                     stack_.discard_command();
@@ -765,9 +783,13 @@ void Controller::execute(const std::string& command) {
         auto a = stack_.pop();
         if (!a->is_integer())
             throw std::invalid_argument("identity matrix size must be integer");
-        int n = static_cast<int>(a->as_integer().v.get_si());
-        if (n < 1) throw std::invalid_argument("identity matrix size must be >= 1");
-        auto r = vector_ops::identity(n);
+        auto& mpz = a->as_integer().v;
+        if (!sc::mpz_fits_sint64(mpz))
+            throw std::invalid_argument("identity matrix size out of range");
+        std::int64_t n64 = sc::mpz_get_sint64(mpz);
+        if (n64 < 1 || n64 > INT_MAX)
+            throw std::invalid_argument("identity matrix size out of range");
+        auto r = vector_ops::identity(static_cast<int>(n64));
         stack_.push(r);
         stack_.end_command("idn", {r});
         return;
@@ -785,9 +807,13 @@ void Controller::execute(const std::string& command) {
         auto a = stack_.pop();
         if (!a->is_integer())
             throw std::invalid_argument("index size must be integer");
-        int n = static_cast<int>(a->as_integer().v.get_si());
-        if (n < 0) throw std::invalid_argument("index size must be >= 0");
-        auto r = vector_ops::index(n);
+        auto& mpz = a->as_integer().v;
+        if (!sc::mpz_fits_sint64(mpz))
+            throw std::invalid_argument("index size out of range");
+        std::int64_t n64 = sc::mpz_get_sint64(mpz);
+        if (n64 < 0 || n64 > INT_MAX)
+            throw std::invalid_argument("index size out of range");
+        auto r = vector_ops::index(static_cast<int>(n64));
         stack_.push(r);
         stack_.end_command("idx", {r});
         return;

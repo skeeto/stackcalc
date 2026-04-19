@@ -1,6 +1,7 @@
 #pragma once
 
 #include "value.hpp"
+#include <cstdint>
 #include <optional>
 
 namespace sc {
@@ -29,8 +30,8 @@ ValuePtr trunc(const DecimalFloat& a);
 ValuePtr fdiv(const DecimalFloat& a, const DecimalFloat& b, int precision);
 ValuePtr mod(const DecimalFloat& a, const DecimalFloat& b, int precision);
 
-// Power (integer exponent)
-ValuePtr pow_int(const DecimalFloat& base, long exp, int precision);
+// Power (integer exponent). Width-stable across LLP64/LP64.
+ValuePtr pow_int(const DecimalFloat& base, std::int64_t exp, int precision);
 
 // Square root
 ValuePtr sqrt(const DecimalFloat& a, int precision);

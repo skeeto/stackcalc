@@ -1,6 +1,10 @@
 #include "hms.hpp"
 #include "arithmetic.hpp"
 #include "decimal_float.hpp"
+#include "mpz_int64.hpp"
+#include <climits>
+#include <cstdint>
+#include <stdexcept>
 
 namespace sc::hms {
 
@@ -24,13 +28,20 @@ static ValuePtr from_total_seconds(const ValuePtr& total_sec, int precision) {
     if (negative) total_abs = arith::neg(total_sec);
 
     auto hours_v = arith::floor(arith::div(total_abs, thirty_six_hundred, precision, FractionMode::Float));
-    int hours = static_cast<int>(hours_v->as_integer().v.get_si());
+    auto& hours_mpz = hours_v->as_integer().v;
+    if (!sc::mpz_fits_sint64(hours_mpz))
+        throw std::overflow_error("HMS hours out of range");
+    std::int64_t hours64 = sc::mpz_get_sint64(hours_mpz);
+    if (hours64 < INT_MIN || hours64 > INT_MAX)
+        throw std::overflow_error("HMS hours out of range");
+    int hours = static_cast<int>(hours64);
 
     auto remainder = arith::sub(total_abs,
         arith::mul(hours_v, thirty_six_hundred, precision), precision);
 
     auto mins_v = arith::floor(arith::div(remainder, sixty, precision, FractionMode::Float));
-    int mins = static_cast<int>(mins_v->as_integer().v.get_si());
+    // mins comes from total_abs mod 3600, divided by 60 — bounded in [0, 59].
+    int mins = static_cast<int>(sc::mpz_get_sint64(mins_v->as_integer().v));
 
     auto secs = arith::sub(remainder,
         arith::mul(mins_v, sixty, precision), precision);

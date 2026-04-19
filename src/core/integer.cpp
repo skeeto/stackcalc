@@ -1,4 +1,6 @@
 #include "integer.hpp"
+#include <climits>
+#include <cstdint>
 #include <stdexcept>
 
 namespace sc::integer {
@@ -47,9 +49,25 @@ ValuePtr abs(const Integer& a) {
     return Value::make_integer(::abs(a.v));
 }
 
-ValuePtr pow(const Integer& base, unsigned long exp) {
-    mpz_class result;
-    mpz_pow_ui(result.get_mpz_t(), base.v.get_mpz_t(), exp);
+ValuePtr pow(const Integer& base, std::uint64_t exp) {
+    // Fast path: when exp fits in unsigned long, defer to GMP's optimised
+    // mpz_pow_ui. This is always taken on LP64 (long is 64-bit) and on
+    // LLP64 (Windows) for exp <= 2^32-1. Above that on LLP64 we fall
+    // back to a manual exponentiation-by-squaring loop using only mpz
+    // multiplications, which take any width of exponent.
+    if (exp <= static_cast<std::uint64_t>(ULONG_MAX)) {
+        mpz_class result;
+        mpz_pow_ui(result.get_mpz_t(), base.v.get_mpz_t(),
+                   static_cast<unsigned long>(exp));
+        return Value::make_integer(std::move(result));
+    }
+    mpz_class result(1);
+    mpz_class b = base.v;
+    while (exp > 0) {
+        if (exp & 1) result *= b;
+        exp >>= 1;
+        if (exp > 0) b *= b;
+    }
     return Value::make_integer(std::move(result));
 }
 
@@ -65,9 +83,33 @@ ValuePtr lcm(const Integer& a, const Integer& b) {
     return Value::make_integer(std::move(result));
 }
 
-ValuePtr factorial(unsigned long n) {
-    mpz_class result;
-    mpz_fac_ui(result.get_mpz_t(), n);
+ValuePtr factorial(std::uint64_t n) {
+    if (n <= static_cast<std::uint64_t>(ULONG_MAX)) {
+        mpz_class result;
+        mpz_fac_ui(result.get_mpz_t(), static_cast<unsigned long>(n));
+        return Value::make_integer(std::move(result));
+    }
+    // Manual loop for n > ULONG_MAX (only reachable on LLP64). The
+    // result is astronomical and the caller will likely OOM long
+    // before this finishes — but the behaviour matches LP64 instead
+    // of erroring out at a different boundary per platform.
+    mpz_class result(1);
+    for (std::uint64_t i = 2; i <= n; ++i) {
+        // Multiply by i in ULONG-sized chunks (only the high bits ever
+        // exceed ULONG_MAX on LLP64; here i is the loop counter so it's
+        // always <= n, but on LLP64 i may itself exceed ULONG_MAX).
+        if (i <= static_cast<std::uint64_t>(ULONG_MAX)) {
+            result *= mpz_class(static_cast<unsigned long>(i));
+        } else {
+            mpz_class big;
+            mpz_set_ui(big.get_mpz_t(),
+                       static_cast<unsigned long>(i >> 32));
+            mpz_mul_2exp(big.get_mpz_t(), big.get_mpz_t(), 32);
+            mpz_add_ui(big.get_mpz_t(), big.get_mpz_t(),
+                       static_cast<unsigned long>(i & 0xFFFFFFFFu));
+            result *= big;
+        }
+    }
     return Value::make_integer(std::move(result));
 }
 

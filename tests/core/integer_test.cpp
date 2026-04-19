@@ -138,3 +138,36 @@ TEST(IntegerTest, Predicates) {
     EXPECT_TRUE(integer::is_even(Integer{4}));
     EXPECT_FALSE(integer::is_even(Integer{3}));
 }
+
+// pow accepts a uint64 exponent. On LLP64 (Windows) this exercises the
+// manual exponentiation-by-squaring fallback for exp > ULONG_MAX; on
+// LP64 it just hits mpz_pow_ui directly. Either way the result must be
+// the same. Use base = 0 / base = 1 / base = -1 cases that finish in
+// constant time regardless of how huge the exponent is, so the test
+// runs quickly on both platforms.
+
+TEST(IntegerTest, PowZeroBaseLargeExp) {
+    auto r = integer::pow(Integer{0}, 4294967296ull);  // 2^32
+    EXPECT_EQ(r->as_integer().v, 0);
+}
+
+TEST(IntegerTest, PowOneBaseHugeExp) {
+    auto r = integer::pow(Integer{1}, 18446744073709551615ull);  // UINT64_MAX
+    EXPECT_EQ(r->as_integer().v, 1);
+}
+
+TEST(IntegerTest, PowMinusOneBaseEvenLargeExp) {
+    auto r = integer::pow(Integer{-1}, 4294967296ull);  // even -> +1
+    EXPECT_EQ(r->as_integer().v, 1);
+}
+
+TEST(IntegerTest, PowMinusOneBaseOddLargeExp) {
+    auto r = integer::pow(Integer{-1}, 4294967297ull);  // odd -> -1
+    EXPECT_EQ(r->as_integer().v, -1);
+}
+
+TEST(IntegerTest, PowSmallBaseModerateExp) {
+    // Stays inside ULONG on every platform; verifies the fast path.
+    auto r = integer::pow(Integer{3}, 20ull);
+    EXPECT_EQ(r->as_integer().v, mpz_class("3486784401"));
+}
