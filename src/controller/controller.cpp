@@ -686,6 +686,95 @@ void Controller::execute(const std::string& command) {
         stack_.end_command("cross", {r});
         return;
     }
+    if (command == "vsort") {
+        stack_.begin_command();
+        auto a = stack_.pop();
+        auto r = inv ? vector_ops::rsort(a->as_vector(), state.precision)
+                     : vector_ops::sort(a->as_vector(), state.precision);
+        stack_.push(r);
+        stack_.end_command(inv ? "rsort" : "sort", {r});
+        return;
+    }
+    if (command == "videntity") {
+        stack_.begin_command();
+        auto a = stack_.pop();
+        if (!a->is_integer())
+            throw std::invalid_argument("identity matrix size must be integer");
+        int n = static_cast<int>(a->as_integer().v.get_si());
+        if (n < 1) throw std::invalid_argument("identity matrix size must be >= 1");
+        auto r = vector_ops::identity(n);
+        stack_.push(r);
+        stack_.end_command("idn", {r});
+        return;
+    }
+    if (command == "vdiagonal") {
+        stack_.begin_command();
+        auto a = stack_.pop();
+        auto r = vector_ops::diagonal(a);
+        stack_.push(r);
+        stack_.end_command("diag", {r});
+        return;
+    }
+    if (command == "vindex") {
+        stack_.begin_command();
+        auto a = stack_.pop();
+        if (!a->is_integer())
+            throw std::invalid_argument("index size must be integer");
+        int n = static_cast<int>(a->as_integer().v.get_si());
+        if (n < 0) throw std::invalid_argument("index size must be >= 0");
+        auto r = vector_ops::index(n);
+        stack_.push(r);
+        stack_.end_command("idx", {r});
+        return;
+    }
+    if (command == "vinverse") {
+        stack_.begin_command();
+        auto a = stack_.pop();
+        auto r = vector_ops::inverse(a->as_vector(), state.precision);
+        stack_.push(r);
+        stack_.end_command("inv", {r});
+        return;
+    }
+    if (command == "vsum") {
+        stack_.begin_command();
+        auto a = stack_.pop();
+        auto r = vector_ops::reduce_add(a->as_vector(), state.precision);
+        stack_.push(r);
+        stack_.end_command("sum", {r});
+        return;
+    }
+    if (command == "vprod") {
+        stack_.begin_command();
+        auto a = stack_.pop();
+        auto r = vector_ops::reduce_mul(a->as_vector(), state.precision);
+        stack_.push(r);
+        stack_.end_command("prod", {r});
+        return;
+    }
+    if (command == "vmax") {
+        stack_.begin_command();
+        auto a = stack_.pop();
+        auto r = vector_ops::reduce_max(a->as_vector(), state.precision);
+        stack_.push(r);
+        stack_.end_command("max", {r});
+        return;
+    }
+    if (command == "vmin") {
+        stack_.begin_command();
+        auto a = stack_.pop();
+        auto r = vector_ops::reduce_min(a->as_vector(), state.precision);
+        stack_.push(r);
+        stack_.end_command("min", {r});
+        return;
+    }
+    if (command == "vdot") {
+        stack_.begin_command();
+        auto args = stack_.pop_n(2);
+        auto r = vector_ops::dot(args[0]->as_vector(), args[1]->as_vector(), state.precision);
+        stack_.push(r);
+        stack_.end_command("dot", {r});
+        return;
+    }
 
     message_ = "Unknown command: " + command;
 }

@@ -326,6 +326,74 @@ TEST(ControllerTest, NonLetterCancelsVariableCommand) {
     EXPECT_TRUE(ctrl.display().pending_prefix.empty());
 }
 
+// --- Vector ops (newly bound) ---
+
+// Helper: push [a, b, c] vector via direct stack manipulation.
+static void push_vec(Controller& ctrl, std::vector<int> elems) {
+    std::vector<ValuePtr> v;
+    for (int e : elems) v.push_back(Value::make_integer(e));
+    ctrl.stack().push(Value::make_vector(std::move(v)));
+}
+
+TEST(ControllerTest, VectorSum) {
+    Controller ctrl;
+    push_vec(ctrl, {1, 2, 3, 4, 5});
+    feed_chars(ctrl, "V+");
+    EXPECT_EQ(ctrl.display().stack_entries.back(), "15");
+}
+
+TEST(ControllerTest, VectorProduct) {
+    Controller ctrl;
+    push_vec(ctrl, {2, 3, 4});
+    feed_chars(ctrl, "V*");
+    EXPECT_EQ(ctrl.display().stack_entries.back(), "24");
+}
+
+TEST(ControllerTest, VectorMaxMin) {
+    Controller ctrl;
+    push_vec(ctrl, {3, 1, 4, 1, 5, 9, 2, 6});
+    feed_chars(ctrl, "VX");                     // max
+    EXPECT_EQ(ctrl.display().stack_entries.back(), "9");
+    feed_special(ctrl, "DEL");
+    push_vec(ctrl, {3, 1, 4, 1, 5, 9, 2, 6});
+    feed_chars(ctrl, "VN");                     // min
+    EXPECT_EQ(ctrl.display().stack_entries.back(), "1");
+}
+
+TEST(ControllerTest, VectorSort) {
+    Controller ctrl;
+    push_vec(ctrl, {3, 1, 4, 1, 5, 9, 2, 6});
+    feed_chars(ctrl, "vr");
+    auto ds = ctrl.display();
+    EXPECT_NE(ds.stack_entries.back().find("[1, 1, 2, 3, 4, 5, 6, 9]"), std::string::npos)
+        << "got: " << ds.stack_entries.back();
+}
+
+TEST(ControllerTest, VectorIdentity) {
+    Controller ctrl;
+    feed_chars(ctrl, "3"); feed_special(ctrl, "RET");
+    feed_chars(ctrl, "vi");
+    auto ds = ctrl.display();
+    // 3x3 identity: [[1,0,0],[0,1,0],[0,0,1]]
+    EXPECT_NE(ds.stack_entries.back().find("[1, 0, 0]"), std::string::npos);
+}
+
+TEST(ControllerTest, VectorIndex) {
+    Controller ctrl;
+    feed_chars(ctrl, "5"); feed_special(ctrl, "RET");
+    feed_chars(ctrl, "vx");
+    EXPECT_NE(ctrl.display().stack_entries.back().find("[1, 2, 3, 4, 5]"),
+              std::string::npos);
+}
+
+TEST(ControllerTest, VectorDot) {
+    Controller ctrl;
+    push_vec(ctrl, {1, 2, 3});
+    push_vec(ctrl, {4, 5, 6});
+    feed_chars(ctrl, "VO");
+    EXPECT_EQ(ctrl.display().stack_entries.back(), "32");   // 4+10+18
+}
+
 // --- Bitwise (b prefix) ---
 
 TEST(ControllerTest, BitwiseAnd) {

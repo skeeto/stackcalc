@@ -150,6 +150,11 @@ void KeyMap::setup_defaults() {
     bind_seq("v", "v", "vreverse");
     bind_seq("v", "h", "vhead");
     bind_seq("v", "k", "vcons");
+    bind_seq("v", "r", "vsort");        // sort ascending; I gives descending
+    bind_seq("v", "i", "videntity");    // n x n identity matrix from top-of-stack n
+    bind_seq("v", "d", "vdiagonal");    // diagonal matrix from top vector
+    bind_seq("v", "x", "vindex");       // [1, 2, ..., n] from top-of-stack n
+    bind_seq("v", "&", "vinverse");     // matrix inverse
 
     // --- Scientific (f prefix) ---
     bind_seq("f", "T", "arctan2");
@@ -162,6 +167,11 @@ void KeyMap::setup_defaults() {
     bind_seq("V", "D", "determinant");
     bind_seq("V", "T", "trace");
     bind_seq("V", "C", "cross");
+    bind_seq("V", "+", "vsum");         // reduce_add
+    bind_seq("V", "*", "vprod");        // reduce_mul
+    bind_seq("V", "X", "vmax");         // reduce_max
+    bind_seq("V", "N", "vmin");         // reduce_min
+    bind_seq("V", "O", "vdot");         // dot product
 }
 
 } // namespace sc
