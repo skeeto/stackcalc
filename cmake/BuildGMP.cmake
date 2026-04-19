@@ -16,7 +16,7 @@ ExternalProject_Add(gmp_external
         "CC=${CMAKE_C_COMPILER}"
         "CXX=${CMAKE_CXX_COMPILER}"
         "CFLAGS=-O2 -std=gnu17"
-    BUILD_COMMAND make -j4
+    BUILD_COMMAND make -j${SC_BUILD_JOBS}
     INSTALL_COMMAND make install
     BUILD_BYPRODUCTS
         "${GMP_PREFIX}/lib/libgmp.a"

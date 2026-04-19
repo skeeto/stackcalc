@@ -8,6 +8,19 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # Export compile commands for tooling
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# Parallelism for ExternalProject native builds (GMP/MPFR run their own
+# autotools 'make', which doesn't see CMake's job server). Honor the
+# standard env var if set; otherwise fall back to detected core count.
+if(DEFINED ENV{CMAKE_BUILD_PARALLEL_LEVEL})
+    set(SC_BUILD_JOBS $ENV{CMAKE_BUILD_PARALLEL_LEVEL})
+else()
+    include(ProcessorCount)
+    ProcessorCount(SC_BUILD_JOBS)
+    if(SC_BUILD_JOBS EQUAL 0)
+        set(SC_BUILD_JOBS 4)
+    endif()
+endif()
+
 include(cmake/BuildGMP.cmake)
 include(cmake/BuildMPFR.cmake)
 

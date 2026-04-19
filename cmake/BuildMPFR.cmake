@@ -17,7 +17,7 @@ ExternalProject_Add(mpfr_external
         --with-gmp=${GMP_PREFIX}
         "CC=${CMAKE_C_COMPILER}"
         "CFLAGS=-O2 -std=gnu17"
-    BUILD_COMMAND make -j4
+    BUILD_COMMAND make -j${SC_BUILD_JOBS}
     INSTALL_COMMAND make install
     BUILD_BYPRODUCTS
         "${MPFR_PREFIX}/lib/libmpfr.a"
