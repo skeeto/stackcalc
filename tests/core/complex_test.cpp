@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include "complex.h"
 #include "arithmetic.h"
+#include <cmath>
 
 using namespace sc;
 
@@ -79,4 +80,79 @@ TEST(ComplexTest, ArithMulComplex) {
     ASSERT_TRUE(r->is_complex());
     EXPECT_EQ(r->as_rect_complex().re->as_integer().v, -5);
     EXPECT_EQ(r->as_rect_complex().im->as_integer().v, 10);
+}
+
+// --- Inv / sqrt / power ---
+
+// Helper: |x| as a double, where x is real
+static double real_to_double(const ValuePtr& v) {
+    if (v->is_integer()) return v->as_integer().v.get_d();
+    if (v->is_fraction()) {
+        auto& f = v->as_fraction();
+        return f.num.get_d() / f.den.get_d();
+    }
+    if (v->is_float()) {
+        auto& f = v->as_float();
+        return f.mantissa.get_d() * std::pow(10.0, f.exponent);
+    }
+    return std::nan("");
+}
+
+TEST(ComplexTest, InvOfI) {
+    // 1/i = -i
+    auto i = Value::make_rect_complex(Value::zero(), Value::make_integer(1));
+    auto r = arith::inv(i, 20);
+    ASSERT_TRUE(r->is_complex());
+    auto& rc = r->as_rect_complex();
+    EXPECT_NEAR(real_to_double(rc.re), 0.0, 1e-15);
+    EXPECT_NEAR(real_to_double(rc.im), -1.0, 1e-15);
+}
+
+TEST(ComplexTest, InvRoundTripsToOne) {
+    // (1 + 2i) * (1/(1 + 2i)) ≈ 1
+    auto z = Value::make_rect_complex(Value::make_integer(1), Value::make_integer(2));
+    auto inv = arith::inv(z, 20);
+    auto product = arith::mul(z, inv, 20);
+    EXPECT_NEAR(real_to_double(product), 1.0, 1e-15);
+}
+
+TEST(ComplexTest, SqrtOfNegativeOneIsI) {
+    auto neg_one = Value::make_integer(-1);
+    auto r = arith::sqrt(neg_one, 20);
+    ASSERT_TRUE(r->is_complex());
+    auto& rc = r->as_rect_complex();
+    EXPECT_NEAR(real_to_double(rc.re), 0.0, 1e-15);
+    EXPECT_NEAR(real_to_double(rc.im), 1.0, 1e-15);
+}
+
+TEST(ComplexTest, SqrtOfComplexSquared) {
+    // sqrt(3+4i)^2 == 3+4i
+    auto z = Value::make_rect_complex(Value::make_integer(3), Value::make_integer(4));
+    auto root = arith::sqrt(z, 20);
+    auto squared = arith::mul(root, root, 20);
+    ASSERT_TRUE(squared->is_complex());
+    auto& sq = squared->as_rect_complex();
+    EXPECT_NEAR(real_to_double(sq.re), 3.0, 1e-15);
+    EXPECT_NEAR(real_to_double(sq.im), 4.0, 1e-15);
+}
+
+TEST(ComplexTest, IntegerPowerOfI) {
+    // i^2 = -1
+    auto i = Value::make_rect_complex(Value::zero(), Value::make_integer(1));
+    auto r = arith::power(i, Value::make_integer(2), 20);
+    EXPECT_NEAR(real_to_double(r), -1.0, 1e-15);
+}
+
+TEST(ComplexTest, IntegerPowerComplex) {
+    // (1+i)^4 = -4
+    auto z = Value::make_rect_complex(Value::make_integer(1), Value::make_integer(1));
+    auto r = arith::power(z, Value::make_integer(4), 20);
+    EXPECT_NEAR(real_to_double(r), -4.0, 1e-15);
+}
+
+TEST(ComplexTest, AbsOfComplex) {
+    // |3+4i| = 5
+    auto z = Value::make_rect_complex(Value::make_integer(3), Value::make_integer(4));
+    auto r = arith::abs(z);
+    EXPECT_NEAR(real_to_double(r), 5.0, 1e-15);
 }

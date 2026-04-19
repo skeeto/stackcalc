@@ -293,6 +293,9 @@ ValuePtr power(const ValuePtr& a, const ValuePtr& b, int precision) {
         return Value::make_fraction(std::move(rn), std::move(rd));
     }
     if (a->is_float()) return decimal_float::pow_int(a->as_float(), e, precision);
+    if (a->tag() == Tag::RectComplex) {
+        return complex::pow(a->as_rect_complex(), e, precision);
+    }
     throw std::invalid_argument("unsupported type for power");
 }
 
@@ -318,11 +321,19 @@ ValuePtr inv(const ValuePtr& a, int precision) {
         case Tag::Integer: return Value::make_fraction(mpz_class(1), a->as_integer().v);
         case Tag::Fraction: return fraction::reciprocal(a->as_fraction());
         case Tag::DecimalFloat: return decimal_float::reciprocal(a->as_float(), precision);
+        case Tag::RectComplex: return complex::inv(a->as_rect_complex(), precision);
         default: throw std::invalid_argument("unsupported type for reciprocal");
     }
 }
 
 ValuePtr sqrt(const ValuePtr& a, int precision) {
+    if (a->tag() == Tag::RectComplex)
+        return complex::sqrt(a->as_rect_complex(), precision);
+    // For negative reals, promote to complex so sqrt(-1) = i instead of NaN.
+    if (a->is_negative() && (a->is_integer() || a->is_fraction() || a->is_float())) {
+        auto rc = RectComplex{a, Value::zero()};
+        return complex::sqrt(rc, precision);
+    }
     auto f = coerce::to_float(a, precision);
     return decimal_float::sqrt(f->as_float(), precision);
 }
@@ -332,6 +343,7 @@ ValuePtr abs(const ValuePtr& a) {
         case Tag::Integer: return integer::abs(a->as_integer());
         case Tag::Fraction: return fraction::abs(a->as_fraction());
         case Tag::DecimalFloat: return decimal_float::abs(a->as_float());
+        case Tag::RectComplex: return complex::magnitude(a->as_rect_complex(), 12);
         case Tag::ErrorForm: return error_form::abs(a->as_error(), 12);
         default: throw std::invalid_argument("unsupported type for absolute value");
     }

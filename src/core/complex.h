@@ -25,5 +25,14 @@ ValuePtr magnitude(const RectComplex& a, int precision);
 // Argument angle
 ValuePtr argument(const RectComplex& a, int precision);
 
+// Reciprocal: conj(a) / |a|^2
+ValuePtr inv(const RectComplex& a, int precision);
+
+// Principal square root (closed-form, no trig)
+ValuePtr sqrt(const RectComplex& a, int precision);
+
+// Integer power via binary exponentiation
+ValuePtr pow(const RectComplex& a, long n, int precision);
+
 } // namespace complex
 } // namespace sc
