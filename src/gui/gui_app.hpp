@@ -120,13 +120,15 @@ private:
     void update_stack();
     void clear_selections();
 
-    // Submit `work` to the runner. on_done re-enters the UI thread
-    // via wxCallAfter to refresh cached_display_ and redraw.
+    // Submit `work` to the runner. on_done builds the display snapshot
+    // on the worker thread (formatting huge numbers can be slow and
+    // would freeze the UI if done here), then re-enters the UI via
+    // wxCallAfter to install the snapshot and redraw.
     void submit_work(std::function<void()> work);
 
-    // Refresh cached_display_ from ctrl_ and trigger a redraw. Must
-    // be called on the UI thread, only when the runner is idle.
-    void refresh_cache_and_redraw();
+    // UI-thread half of the on_done flow: install snapshot, clear busy
+    // state, redraw.
+    void apply_snapshot_and_redraw(sc::DisplayState snapshot);
 
     // Liveness flag for runner callbacks. Captured by value (shared_ptr
     // copy) into every on_done lambda; checked before touching `this`.

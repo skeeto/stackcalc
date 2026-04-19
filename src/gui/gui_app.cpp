@@ -642,8 +642,15 @@ void CalcPanel::dispatch_key(const sc::KeyEvent& k) {
 }
 
 // Helper: submit work through the runner. Returns immediately; the
-// on_done callback (worker thread) marshals back to the UI via
-// wxCallAfter to refresh the display cache and redraw.
+// on_done callback (worker thread) builds the display snapshot and
+// then marshals to the UI via wxCallAfter for the actual repaint.
+//
+// Why the snapshot is built on the worker, not the UI thread: for
+// huge stack values (e.g. 2^100000 → ~30 000 decimal digits),
+// mpz_get_str inside the formatter takes seconds. If the UI thread
+// did it, the window would freeze. The worker is already off the UI
+// thread and its Section has ended by on_done time, so allocations
+// during display() don't trip the cancel hook.
 //
 // The alive flag (captured by value) gates both the worker callback
 // and the UI-thread callback against `this` having been destroyed
@@ -652,24 +659,28 @@ void CalcPanel::submit_work(std::function<void()> work) {
     busy_ = true;
     overlay_timer_.StartOnce(150);  // delay before "Computing…" overlay
     auto alive = alive_;
+    auto snapshot = std::make_shared<sc::DisplayState>();
     runner_.submit(
-        std::move(work),
-        [this, alive](sc::CalcRunner::Outcome, std::exception_ptr){
+        [this, work = std::move(work)] { work(); },
+        [this, alive, snapshot](sc::CalcRunner::Outcome, std::exception_ptr) {
             if (!alive->load()) return;
-            CallAfter([this, alive]{
+            // Safe to call display() here: the worker's Section ended
+            // when the lambda invoked work(), and we're still on the
+            // worker thread (off the UI). Slow formatting happens here
+            // without freezing the window.
+            *snapshot = ctrl_.display();
+            CallAfter([this, alive, snapshot]{
                 if (!alive->load()) return;
-                refresh_cache_and_redraw();
+                apply_snapshot_and_redraw(std::move(*snapshot));
             });
         });
 }
 
-void CalcPanel::refresh_cache_and_redraw() {
+void CalcPanel::apply_snapshot_and_redraw(sc::DisplayState snapshot) {
     busy_ = false;
     overlay_timer_.Stop();
     computing_overlay_visible_ = false;
-    // Safe to call now — busy_ went false when the worker finished, and
-    // this runs on the UI thread via wxCallAfter, so no races.
-    cached_display_ = ctrl_.display();
+    cached_display_ = std::move(snapshot);
     clear_selections();
     redraw();
 }
