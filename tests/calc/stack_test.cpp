@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include "stack.h"
+#include "stack.hpp"
 
 using namespace sc;
 

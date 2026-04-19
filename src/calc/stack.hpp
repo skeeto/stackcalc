@@ -1,9 +1,9 @@
 #pragma once
 
-#include "value.h"
-#include "trail.h"
-#include "undo.h"
-#include "modes.h"
+#include "value.hpp"
+#include "trail.hpp"
+#include "undo.hpp"
+#include "modes.hpp"
 #include <vector>
 #include <stdexcept>
 

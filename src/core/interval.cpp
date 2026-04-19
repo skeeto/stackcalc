@@ -1,5 +1,5 @@
-#include "interval.h"
-#include "arithmetic.h"
+#include "interval.hpp"
+#include "arithmetic.hpp"
 #include <algorithm>
 
 namespace sc::interval {

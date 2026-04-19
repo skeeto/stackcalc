@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include "operations.h"
+#include "operations.hpp"
 #include <cmath>
 
 using namespace sc;

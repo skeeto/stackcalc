@@ -1,6 +1,6 @@
-#include "formatter.h"
-#include "decimal_float.h"
-#include "arithmetic.h"
+#include "formatter.hpp"
+#include "decimal_float.hpp"
+#include "arithmetic.hpp"
 #include <sstream>
 #include <algorithm>
 #include <cmath>

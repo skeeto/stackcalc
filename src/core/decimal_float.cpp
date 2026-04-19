@@ -1,4 +1,4 @@
-#include "decimal_float.h"
+#include "decimal_float.hpp"
 #include <stdexcept>
 #include <algorithm>
 

@@ -1,3 +1,3 @@
-#include "gui_app.h"
+#include "gui_app.hpp"
 
 wxIMPLEMENT_APP(StackCalcApp);

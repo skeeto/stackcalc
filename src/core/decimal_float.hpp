@@ -1,6 +1,6 @@
 #pragma once
 
-#include "value.h"
+#include "value.hpp"
 #include <optional>
 
 namespace sc {

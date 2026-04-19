@@ -1,5 +1,5 @@
-#include "complex.h"
-#include "arithmetic.h"
+#include "complex.hpp"
+#include "arithmetic.hpp"
 
 namespace sc::complex {
 

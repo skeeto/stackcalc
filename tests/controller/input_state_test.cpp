@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include "input_state.h"
+#include "input_state.hpp"
 #include <cmath>
 
 using namespace sc;

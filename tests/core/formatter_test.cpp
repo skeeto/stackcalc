@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include "formatter.h"
+#include "formatter.hpp"
 
 using namespace sc;
 

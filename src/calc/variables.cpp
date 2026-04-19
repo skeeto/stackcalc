@@ -1,5 +1,5 @@
-#include "variables.h"
-#include "arithmetic.h"
+#include "variables.hpp"
+#include "arithmetic.hpp"
 #include <stdexcept>
 
 namespace sc {

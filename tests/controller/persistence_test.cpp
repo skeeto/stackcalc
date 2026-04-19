@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
-#include "persistence.h"
-#include "controller.h"
+#include "persistence.hpp"
+#include "controller.hpp"
 #include <sstream>
 
 using namespace sc;

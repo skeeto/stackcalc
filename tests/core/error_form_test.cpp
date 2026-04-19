@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
-#include "error_form.h"
-#include "arithmetic.h"
+#include "error_form.hpp"
+#include "arithmetic.hpp"
 
 using namespace sc;
 

@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include "constants.h"
+#include "constants.hpp"
 
 using namespace sc;
 

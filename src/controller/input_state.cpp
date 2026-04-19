@@ -1,5 +1,5 @@
-#include "input_state.h"
-#include "decimal_float.h"
+#include "input_state.hpp"
+#include "decimal_float.hpp"
 #include <stdexcept>
 
 namespace sc {

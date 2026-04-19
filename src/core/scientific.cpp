@@ -1,8 +1,8 @@
-#include "scientific.h"
-#include "mpfr_bridge.h"
-#include "constants.h"
-#include "arithmetic.h"
-#include "integer.h"
+#include "scientific.hpp"
+#include "mpfr_bridge.hpp"
+#include "constants.hpp"
+#include "arithmetic.hpp"
+#include "integer.hpp"
 #include <chrono>
 #include <stdexcept>
 

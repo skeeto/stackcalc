@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include "variables.h"
+#include "variables.hpp"
 #include <algorithm>
 
 using namespace sc;

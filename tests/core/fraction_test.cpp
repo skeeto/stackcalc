@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
-#include "fraction.h"
-#include "value.h"
+#include "fraction.hpp"
+#include "value.hpp"
 
 using namespace sc;
 

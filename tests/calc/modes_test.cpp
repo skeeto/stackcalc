@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
-#include "modes.h"
-#include "stack.h"
+#include "modes.hpp"
+#include "stack.hpp"
 
 using namespace sc;
 

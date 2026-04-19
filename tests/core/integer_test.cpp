@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include "integer.h"
+#include "integer.hpp"
 
 using namespace sc;
 

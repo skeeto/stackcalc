@@ -1,6 +1,6 @@
 #pragma once
 
-#include "controller.h"
+#include "controller.hpp"
 #include <iosfwd>
 
 // Stream-based serialization for the calculator's full state.

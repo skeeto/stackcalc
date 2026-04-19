@@ -1,7 +1,7 @@
-#include "mpfr_bridge.h"
-#include "decimal_float.h"
-#include "fraction.h"
-#include "coercion.h"
+#include "mpfr_bridge.hpp"
+#include "decimal_float.hpp"
+#include "fraction.hpp"
+#include "coercion.hpp"
 #include <cmath>
 #include <cstdlib>
 

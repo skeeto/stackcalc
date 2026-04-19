@@ -1,6 +1,6 @@
 #pragma once
 
-#include "value.h"
+#include "value.hpp"
 #include <mpfr.h>
 
 namespace sc::mpfr_bridge {

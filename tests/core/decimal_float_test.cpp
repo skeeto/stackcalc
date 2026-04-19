@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
-#include "decimal_float.h"
-#include "value.h"
+#include "decimal_float.hpp"
+#include "value.hpp"
 
 using namespace sc;
 

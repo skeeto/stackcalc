@@ -1,6 +1,6 @@
-#include "coercion.h"
-#include "fraction.h"
-#include "decimal_float.h"
+#include "coercion.hpp"
+#include "fraction.hpp"
+#include "decimal_float.hpp"
 
 namespace sc::coerce {
 

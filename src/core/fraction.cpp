@@ -1,4 +1,4 @@
-#include "fraction.h"
+#include "fraction.hpp"
 #include <stdexcept>
 
 namespace sc::fraction {

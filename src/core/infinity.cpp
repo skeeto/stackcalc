@@ -1,4 +1,4 @@
-#include "infinity.h"
+#include "infinity.hpp"
 
 namespace sc::infinity_ops {
 

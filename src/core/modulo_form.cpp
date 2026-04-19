@@ -1,5 +1,5 @@
-#include "modulo_form.h"
-#include "arithmetic.h"
+#include "modulo_form.hpp"
+#include "arithmetic.hpp"
 #include <stdexcept>
 
 namespace sc::modulo_form {

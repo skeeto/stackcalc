@@ -1,5 +1,5 @@
-#include "gui_app.h"
-#include "persistence.h"
+#include "gui_app.hpp"
+#include "persistence.hpp"
 #include <wx/dcbuffer.h>
 #include <wx/file.h>
 #include <wx/filename.h>

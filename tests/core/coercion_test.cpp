@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
-#include "coercion.h"
-#include "value.h"
+#include "coercion.hpp"
+#include "value.hpp"
 
 using namespace sc;
 

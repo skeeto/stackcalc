@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
-#include "scientific.h"
-#include "constants.h"
+#include "scientific.hpp"
+#include "constants.hpp"
 #include <cmath>
 #include <numbers>
 

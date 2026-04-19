@@ -1,6 +1,6 @@
-#include "hms.h"
-#include "arithmetic.h"
-#include "decimal_float.h"
+#include "hms.hpp"
+#include "arithmetic.hpp"
+#include "decimal_float.hpp"
 
 namespace sc::hms {
 

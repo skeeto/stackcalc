@@ -1,4 +1,4 @@
-#include "stack.h"
+#include "stack.hpp"
 
 namespace sc {
 

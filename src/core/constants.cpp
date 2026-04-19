@@ -1,5 +1,5 @@
-#include "constants.h"
-#include "mpfr_bridge.h"
+#include "constants.hpp"
+#include "mpfr_bridge.hpp"
 #include <mutex>
 
 namespace sc::constants {

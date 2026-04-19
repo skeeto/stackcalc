@@ -1,5 +1,5 @@
-#include "vector.h"
-#include "arithmetic.h"
+#include "vector.hpp"
+#include "arithmetic.hpp"
 #include <stdexcept>
 #include <algorithm>
 

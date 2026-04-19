@@ -1,7 +1,7 @@
 #pragma once
 
-#include "value.h"
-#include "modes.h"
+#include "value.hpp"
+#include "modes.hpp"
 
 namespace sc::vector_ops {
 

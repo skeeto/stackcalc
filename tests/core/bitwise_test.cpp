@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include "bitwise.h"
+#include "bitwise.hpp"
 
 using namespace sc;
 

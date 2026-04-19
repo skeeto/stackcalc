@@ -1,12 +1,12 @@
 #pragma once
 
-#include "key_event.h"
-#include "key_map.h"
-#include "input_state.h"
-#include "display_state.h"
-#include "stack.h"
-#include "variables.h"
-#include "formatter.h"
+#include "key_event.hpp"
+#include "key_map.hpp"
+#include "input_state.hpp"
+#include "display_state.hpp"
+#include "stack.hpp"
+#include "variables.hpp"
+#include "formatter.hpp"
 
 namespace sc {
 

@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
-#include "interval.h"
-#include "arithmetic.h"
+#include "interval.hpp"
+#include "arithmetic.hpp"
 
 using namespace sc;
 

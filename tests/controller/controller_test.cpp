@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include "controller.h"
+#include "controller.hpp"
 
 using namespace sc;
 

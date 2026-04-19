@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
-#include "infinity.h"
-#include "arithmetic.h"
+#include "infinity.hpp"
+#include "arithmetic.hpp"
 
 using namespace sc;
 

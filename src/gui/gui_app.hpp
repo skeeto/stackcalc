@@ -5,7 +5,7 @@
 #include <wx/splitter.h>
 #include <wx/richtext/richtextctrl.h>
 #include <unordered_map>
-#include "controller.h"
+#include "controller.hpp"
 
 class CalcPanel;
 class TrailPanel;

@@ -1,9 +1,9 @@
-#include "controller.h"
-#include "operations.h"
-#include "scientific.h"
-#include "constants.h"
-#include "vector.h"
-#include "bitwise.h"
+#include "controller.hpp"
+#include "operations.hpp"
+#include "scientific.hpp"
+#include "constants.hpp"
+#include "vector.hpp"
+#include "bitwise.hpp"
 #include <cctype>
 #include <sstream>
 

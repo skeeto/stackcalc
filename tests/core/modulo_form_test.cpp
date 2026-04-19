@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
-#include "modulo_form.h"
-#include "arithmetic.h"
+#include "modulo_form.hpp"
+#include "arithmetic.hpp"
 
 using namespace sc;
 

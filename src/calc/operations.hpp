@@ -1,7 +1,7 @@
 #pragma once
 
-#include "stack.h"
-#include "arithmetic.h"
+#include "stack.hpp"
+#include "arithmetic.hpp"
 
 namespace sc::ops {
 

@@ -1,4 +1,4 @@
-#include "bitwise.h"
+#include "bitwise.hpp"
 #include <stdexcept>
 
 namespace sc::bitwise {

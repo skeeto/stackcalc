@@ -1,4 +1,4 @@
-#include "trail.h"
+#include "trail.hpp"
 #include <algorithm>
 
 namespace sc {

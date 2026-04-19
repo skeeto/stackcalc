@@ -1,4 +1,4 @@
-#include "integer.h"
+#include "integer.hpp"
 #include <stdexcept>
 
 namespace sc::integer {

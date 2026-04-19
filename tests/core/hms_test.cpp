@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include "hms.h"
+#include "hms.hpp"
 
 using namespace sc;
 

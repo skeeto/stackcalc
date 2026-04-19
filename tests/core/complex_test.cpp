@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
-#include "complex.h"
-#include "arithmetic.h"
+#include "complex.hpp"
+#include "arithmetic.hpp"
 #include <cmath>
 
 using namespace sc;

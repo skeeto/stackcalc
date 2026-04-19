@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include "scientific.h"
+#include "scientific.hpp"
 
 using namespace sc;
 

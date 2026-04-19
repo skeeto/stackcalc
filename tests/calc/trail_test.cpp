@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include "trail.h"
+#include "trail.hpp"
 
 using namespace sc;
 
