@@ -4,7 +4,11 @@
 #include <wx/timer.h>
 #include <wx/splitter.h>
 #include <wx/richtext/richtextctrl.h>
+#include <atomic>
+#include <functional>
+#include <memory>
 #include <unordered_map>
+#include "calc_runner.hpp"
 #include "controller.hpp"
 
 class CalcPanel;
@@ -66,12 +70,26 @@ private:
 class CalcPanel : public wxPanel {
 public:
     explicit CalcPanel(wxWindow* parent);
+    ~CalcPanel();
 
     sc::Controller& controller() { return ctrl_; }
     TopBar*  top_bar()  { return top_bar_; }
     ModeBar* mode_bar() { return mode_bar_; }
     bool cursor_visible() const { return cursor_visible_; }
     const wxFont& mono_font() const { return mono_font_; }
+
+    // Cached display snapshot — paint code reads from here instead of
+    // calling controller().display() directly, since the controller
+    // may be mid-mutation on the worker thread when paint fires.
+    // Updated on the UI thread after every CalcRunner job completes.
+    const sc::DisplayState& display_cache() const { return cached_display_; }
+
+    // True iff the worker is currently running a calculation. While
+    // busy, the UI accepts only the cancel keystroke (Ctrl+G) and
+    // ignores other input. After kComputingOverlayDelayMs, paint code
+    // shows a "Computing…" overlay instead of the (frozen) stack.
+    bool is_busy() const { return busy_; }
+    bool computing_overlay_visible() const { return computing_overlay_visible_; }
 
     // Wired up by StackCalcFrame after the splitter creates both panes.
     void set_trail_panel(TrailPanel* tp) { trail_panel_ = tp; }
@@ -85,7 +103,12 @@ public:
     void redraw();
 
     // Feed a string of characters to the controller, then redraw.
+    // Routes through the runner like every other input.
     void dispatch_keys(const std::string& keys);
+
+    // Submit a single special / modified KeyEvent through the runner.
+    // No-op if already busy.
+    void dispatch_key(const sc::KeyEvent& k);
 
     // Public so the frame-level char hook can dispatch into them.
     void on_key_down(wxKeyEvent& e);
@@ -93,16 +116,34 @@ public:
 
 private:
     void on_blink_tick(wxTimerEvent& e);
+    void on_overlay_tick(wxTimerEvent& e);
     void update_stack();
-    // Drop any active text selection on the stack/trail rich-text
-    // widgets. Called after every consumed calculator keystroke so a
-    // stray selection doesn't linger as the user keeps typing.
     void clear_selections();
 
+    // Submit `work` to the runner. on_done re-enters the UI thread
+    // via wxCallAfter to refresh cached_display_ and redraw.
+    void submit_work(std::function<void()> work);
+
+    // Refresh cached_display_ from ctrl_ and trigger a redraw. Must
+    // be called on the UI thread, only when the runner is idle.
+    void refresh_cache_and_redraw();
+
+    // Liveness flag for runner callbacks. Captured by value (shared_ptr
+    // copy) into every on_done lambda; checked before touching `this`.
+    // Cleared in our destructor before runner_ shuts down. Declared
+    // first so it's destroyed last, after every captured shared_ptr.
+    std::shared_ptr<std::atomic<bool>> alive_ =
+        std::make_shared<std::atomic<bool>>(true);
+
     sc::Controller    ctrl_;
+    sc::CalcRunner    runner_;
+    sc::DisplayState  cached_display_;
     wxFont            mono_font_;
     wxTimer           blink_timer_;
+    wxTimer           overlay_timer_;          // delays "Computing…" overlay
     bool              cursor_visible_ = true;
+    bool              busy_ = false;           // a job is in flight
+    bool              computing_overlay_visible_ = false;
     TopBar*           top_bar_   = nullptr;
     wxRichTextCtrl*   stack_ctrl_ = nullptr;
     ModeBar*          mode_bar_  = nullptr;

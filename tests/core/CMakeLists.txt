@@ -1,6 +1,7 @@
 sc_add_test(mpz_int64_test mpz_int64_test.cpp stackcalc-core)
 sc_add_test(limits_test limits_test.cpp stackcalc-core)
 sc_add_test(cancel_test cancel_test.cpp stackcalc-core)
+sc_add_test(calc_runner_test calc_runner_test.cpp stackcalc-core)
 sc_add_test(integer_test integer_test.cpp stackcalc-core)
 sc_add_test(fraction_test fraction_test.cpp stackcalc-core)
 sc_add_test(decimal_float_test decimal_float_test.cpp stackcalc-core)

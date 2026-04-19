@@ -880,8 +880,10 @@ DisplayState Controller::display() const {
         ds.stack_entries.push_back(fmt.format(v));
     }
 
-    // Entry text
-    ds.entry_text = input_.text();
+    // Entry text + active flag. The GUI uses input_active rather than
+    // re-querying the controller (which may be on a worker thread).
+    ds.entry_text   = input_.text();
+    ds.input_active = input_.active();
 
     // Mode line
     ds.mode_line = build_mode_line();

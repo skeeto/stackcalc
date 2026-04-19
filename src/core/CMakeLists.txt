@@ -18,6 +18,7 @@ add_library(stackcalc-core STATIC
     constants.cpp
     scientific.cpp
     cancel.cpp
+    calc_runner.cpp
 )
 target_include_directories(stackcalc-core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}

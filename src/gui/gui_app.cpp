@@ -204,24 +204,20 @@ void StackCalcFrame::build_menus() {
     // edits the entry when active, drops otherwise). Show the keystroke
     // in parens like the other menu items, and bind a per-item lambda
     // that synthesizes the right Special/Modified KeyEvent on click.
+    // Menu-driven commands route through the runner just like keyboard
+    // input, so they respect the same async + cancel pipeline.
     auto add_special = [&](wxMenu* m, const wxString& label, const char* name) {
         int id = next_menu_id_++;
         m->Append(id, label);
         Bind(wxEVT_MENU, [this, name](wxCommandEvent&) {
-            try { panel_->controller().process_key(sc::KeyEvent::special(name)); }
-            catch (...) {}
-            panel_->redraw();
-            panel_->focus_calc();
+            panel_->dispatch_key(sc::KeyEvent::special(name));
         }, id);
     };
     auto add_modified = [&](wxMenu* m, const wxString& label, const char* name) {
         int id = next_menu_id_++;
         m->Append(id, label);
         Bind(wxEVT_MENU, [this, name](wxCommandEvent&) {
-            try { panel_->controller().process_key(sc::KeyEvent::modified(name)); }
-            catch (...) {}
-            panel_->redraw();
-            panel_->focus_calc();
+            panel_->dispatch_key(sc::KeyEvent::modified(name));
         }, id);
     };
     add_special (edit, "&Drop (Back)",            "DEL");
@@ -543,7 +539,6 @@ void StackCalcFrame::on_quit(wxCommandEvent&) {
 CalcPanel::CalcPanel(wxWindow* parent)
     : wxPanel(parent, wxID_ANY, wxDefaultPosition, wxDefaultSize,
               wxWANTS_CHARS | wxFULL_REPAINT_ON_RESIZE)
-    , blink_timer_(this)
 {
     SetBackgroundColour(kBgColor);
 
@@ -598,22 +593,92 @@ CalcPanel::CalcPanel(wxWindow* parent)
     // still work for selection.
     Bind(wxEVT_KEY_DOWN, &CalcPanel::on_key_down,   this);
     Bind(wxEVT_CHAR,     &CalcPanel::on_char,       this);
-    Bind(wxEVT_TIMER,    &CalcPanel::on_blink_tick, this);
+    // Two timers with distinct IDs so we can dispatch each separately.
+    constexpr int kBlinkTimerId   = 30001;
+    constexpr int kOverlayTimerId = 30002;
+    blink_timer_.SetOwner(this, kBlinkTimerId);
+    overlay_timer_.SetOwner(this, kOverlayTimerId);
+    Bind(wxEVT_TIMER, &CalcPanel::on_blink_tick,   this, kBlinkTimerId);
+    Bind(wxEVT_TIMER, &CalcPanel::on_overlay_tick, this, kOverlayTimerId);
     stack_ctrl_->Bind(wxEVT_KEY_DOWN, &CalcPanel::on_key_down, this);
     stack_ctrl_->Bind(wxEVT_CHAR,     &CalcPanel::on_char,     this);
 
+    // Initial display snapshot so paint code has something to read
+    // before the first command runs.
+    cached_display_ = ctrl_.display();
     update_stack();
     // Blink timer is only started while number entry is active — see redraw().
 }
 
+CalcPanel::~CalcPanel() {
+    // Disarm callbacks first. The runner_ destructor (which fires next
+    // when members tear down) will cancel and join the worker; if the
+    // worker's last job calls on_done, the captured shared_ptr<bool>
+    // alive flag is now false and the lambda bails out without
+    // touching `this`. Same protection for any wxCallAfter already
+    // queued — it'll see alive==false when the UI loop processes it.
+    alive_->store(false);
+}
+
 void CalcPanel::dispatch_keys(const std::string& keys) {
-    for (char c : keys) {
-        try {
-            ctrl_.process_key(sc::KeyEvent::character(c));
-        } catch (...) { /* defensive — Controller already handles errors */ }
-    }
+    // Used by menu items that "press a sequence of keys for you"
+    // (e.g. Math > Add → "+"). Routes through the runner so
+    // long-running menu commands are still cancellable.
+    if (busy_) return;
+    submit_work([this, keys]{
+        for (char c : keys) {
+            try { ctrl_.process_key(sc::KeyEvent::character(c)); }
+            catch (...) { /* controller already absorbs std::exception */ }
+        }
+    });
+}
+
+void CalcPanel::dispatch_key(const sc::KeyEvent& k) {
+    if (busy_) return;
+    submit_work([this, k]{
+        try { ctrl_.process_key(k); }
+        catch (...) { /* controller absorbs std::exception */ }
+    });
+}
+
+// Helper: submit work through the runner. Returns immediately; the
+// on_done callback (worker thread) marshals back to the UI via
+// wxCallAfter to refresh the display cache and redraw.
+//
+// The alive flag (captured by value) gates both the worker callback
+// and the UI-thread callback against `this` having been destroyed
+// while the job was in flight (e.g. user closes the app mid-calc).
+void CalcPanel::submit_work(std::function<void()> work) {
+    busy_ = true;
+    overlay_timer_.StartOnce(150);  // delay before "Computing…" overlay
+    auto alive = alive_;
+    runner_.submit(
+        std::move(work),
+        [this, alive](sc::CalcRunner::Outcome, std::exception_ptr){
+            if (!alive->load()) return;
+            CallAfter([this, alive]{
+                if (!alive->load()) return;
+                refresh_cache_and_redraw();
+            });
+        });
+}
+
+void CalcPanel::refresh_cache_and_redraw() {
+    busy_ = false;
+    overlay_timer_.Stop();
+    computing_overlay_visible_ = false;
+    // Safe to call now — busy_ went false when the worker finished, and
+    // this runs on the UI thread via wxCallAfter, so no races.
+    cached_display_ = ctrl_.display();
+    clear_selections();
     redraw();
-    focus_calc();
+}
+
+void CalcPanel::on_overlay_tick(wxTimerEvent&) {
+    if (busy_) {
+        computing_overlay_visible_ = true;
+        update_stack();  // repaints the stack widget with overlay text
+    }
 }
 
 // Drop focus onto the actual focusable child. wxPanel itself can be
@@ -627,7 +692,7 @@ void CalcPanel::focus_calc() {
 void CalcPanel::redraw() {
     // Start/stop the cursor-blink timer based on whether entry is active,
     // so an idle calculator wakes up zero times per second.
-    bool active = ctrl_.input().active();
+    bool active = cached_display_.input_active;
     if (active && !blink_timer_.IsRunning()) {
         cursor_visible_ = true;
         blink_timer_.Start(500);
@@ -649,28 +714,35 @@ void CalcPanel::on_blink_tick(wxTimerEvent&) {
 }
 
 void CalcPanel::update_stack() {
-    auto ds = ctrl_.display();
-
     stack_ctrl_->Freeze();
     stack_ctrl_->Clear();
 
-    // Top-of-stack rendered at the TOP of the widget, growing downward.
-    // ds.stack_entries[back()] is the top; iterate in reverse and number
-    // 1, 2, 3, ... from there.
-    int n = static_cast<int>(ds.stack_entries.size());
-    for (int j = 0; j < n; ++j) {
-        int idx = n - 1 - j;        // entry index in stack_entries
-        int label = j + 1;          // 1 = top of stack
-
-        stack_ctrl_->BeginTextColour(kLabelColor);
-        stack_ctrl_->WriteText(wxString::Format("%3d:  ", label));
+    if (computing_overlay_visible_) {
+        // Replace the stack contents with a "Computing…" message while
+        // a long calculation is running, so the user has visual
+        // feedback that input is being held. The previous stack
+        // contents are restored when refresh_cache_and_redraw fires.
+        stack_ctrl_->BeginTextColour(kFlagColor);
+        stack_ctrl_->WriteText(wxT("\n  Computing…  (Ctrl+G to cancel)"));
         stack_ctrl_->EndTextColour();
+    } else {
+        // Top-of-stack rendered at the TOP of the widget, growing downward.
+        const auto& entries = cached_display_.stack_entries;
+        int n = static_cast<int>(entries.size());
+        for (int j = 0; j < n; ++j) {
+            int idx = n - 1 - j;        // entry index in stack_entries
+            int label = j + 1;          // 1 = top of stack
 
-        stack_ctrl_->BeginTextColour(kValueColor);
-        stack_ctrl_->WriteText(wxString::FromUTF8(ds.stack_entries[idx].c_str()));
-        stack_ctrl_->EndTextColour();
+            stack_ctrl_->BeginTextColour(kLabelColor);
+            stack_ctrl_->WriteText(wxString::Format("%3d:  ", label));
+            stack_ctrl_->EndTextColour();
 
-        if (j + 1 < n) stack_ctrl_->Newline();
+            stack_ctrl_->BeginTextColour(kValueColor);
+            stack_ctrl_->WriteText(wxString::FromUTF8(entries[idx].c_str()));
+            stack_ctrl_->EndTextColour();
+
+            if (j + 1 < n) stack_ctrl_->Newline();
+        }
     }
 
     stack_ctrl_->Thaw();
@@ -715,7 +787,10 @@ void TopBar::on_paint(wxPaintEvent&) {
     dc.SetBackground(wxBrush(kBgColor));
     dc.Clear();
 
-    auto ds = host_->controller().display();
+    // Read the cached snapshot — the controller may be mid-mutation
+    // on the worker thread, so we must NOT call host_->controller()
+    // here. The cache is refreshed on the UI thread after every job.
+    const auto& ds = host_->display_cache();
     wxSize size = GetClientSize();
     int line_h = dc.GetCharHeight();
     int padding = FromDIP(4);
@@ -774,7 +849,7 @@ void ModeBar::on_paint(wxPaintEvent&) {
     dc.SetBackground(wxBrush(kBgColor));
     dc.Clear();
 
-    auto ds = host_->controller().display();
+    const auto& ds = host_->display_cache();
     wxSize size = GetClientSize();
     int line_h = dc.GetCharHeight();
     int padding = FromDIP(4);
@@ -803,15 +878,15 @@ void ModeBar::on_paint(wxPaintEvent&) {
 
 void CalcPanel::on_char(wxKeyEvent& e) {
     int uc = e.GetUnicodeKey();
-    if (uc != WXK_NONE && uc >= 0x20 && uc < 0x7f) {
-        try {
-            ctrl_.process_key(sc::KeyEvent::character(static_cast<char>(uc)));
-        } catch (...) {
-            // Controller swallows its own errors via message_; defensive
-        }
-        clear_selections();
-        redraw();
-    }
+    if (uc == WXK_NONE || uc < 0x20 || uc >= 0x7f) return;  // ignore controls
+
+    if (busy_) return;  // only the cancel keystroke (handled in on_key_down) reaches here
+
+    char ch = static_cast<char>(uc);
+    submit_work([this, ch]{
+        try { ctrl_.process_key(sc::KeyEvent::character(ch)); }
+        catch (...) { /* controller already absorbs std::exception */ }
+    });
     // Don't Skip — consumed
 }
 
@@ -822,61 +897,86 @@ void CalcPanel::on_key_down(wxKeyEvent& e) {
     int code = e.GetKeyCode();
     bool handled = true;
 
+    // Ctrl+G is always available — even (especially) while a
+    // calculation is in flight. Sets the cancel flag; the worker's
+    // next GMP allocation throws CancelledException.
+    if (ctrl && code == 'G') {
+        runner_.request_cancel();
+        return;
+    }
+
+    // While the worker is busy, ignore every other keystroke. Letting
+    // them queue would buffer indefinitely if the user mashes keys
+    // during a long calc. They get their attention via the
+    // "Computing…" overlay (after 150 ms).
+    if (busy_) {
+        e.Skip();  // let menu accelerators (e.g. Cmd+Q) still work
+        return;
+    }
+
     // Ctrl/Cmd-modified keys are reserved for the OS and menu
     // accelerators (Cmd+Q quit, Cmd+W close, Cmd+Tab app switcher,
     // Cmd+C copy, etc.). Only the two we deliberately mapped onto
     // Ctrl modifiers — Z and Y for undo/redo — are claimed here;
-    // everything else falls through. Without this guard, e.g.
-    // Cmd+Tab on macOS would be processed as our SWAP, which is
-    // wrong and (during reactivation) appears to confuse macOS.
+    // everything else falls through.
     if (ctrl) {
-        if (code == 'Z')      ctrl_.process_key(sc::KeyEvent::character('U'));
-        else if (code == 'Y') ctrl_.process_key(sc::KeyEvent::character('D'));
-        else { e.Skip(); return; }
-        clear_selections();
-        redraw();
+        if (code == 'Z') {
+            submit_work([this]{ ctrl_.process_key(sc::KeyEvent::character('U')); });
+            return;
+        }
+        if (code == 'Y') {
+            submit_work([this]{ ctrl_.process_key(sc::KeyEvent::character('D')); });
+            return;
+        }
+        e.Skip();
         return;
     }
 
     switch (code) {
         case WXK_RETURN:
-        case WXK_NUMPAD_ENTER:
-            if (alt) ctrl_.process_key(sc::KeyEvent::modified("M-RET"));
-            else     ctrl_.process_key(sc::KeyEvent::special("RET"));
+        case WXK_NUMPAD_ENTER: {
+            auto k = alt ? sc::KeyEvent::modified("M-RET")
+                         : sc::KeyEvent::special("RET");
+            submit_work([this, k]{ ctrl_.process_key(k); });
             break;
-
+        }
         case WXK_BACK:
-            // try edit-backspace; if not consumed (no entry active), drop
-            if (!ctrl_.process_key(sc::KeyEvent::character('\b')))
-                ctrl_.process_key(sc::KeyEvent::special("DEL"));
+            submit_work([this]{
+                // try edit-backspace; if not consumed (no entry
+                // active), drop
+                if (!ctrl_.process_key(sc::KeyEvent::character('\b')))
+                    ctrl_.process_key(sc::KeyEvent::special("DEL"));
+            });
             break;
-
         case WXK_DELETE:
-            ctrl_.process_key(sc::KeyEvent::special("DEL"));
+            submit_work([this]{ ctrl_.process_key(sc::KeyEvent::special("DEL")); });
             break;
-
-        case WXK_TAB:
-            if (alt) ctrl_.process_key(sc::KeyEvent::modified("M-TAB"));
-            else     ctrl_.process_key(sc::KeyEvent::special("TAB"));
+        case WXK_TAB: {
+            auto k = alt ? sc::KeyEvent::modified("M-TAB")
+                         : sc::KeyEvent::special("TAB");
+            submit_work([this, k]{ ctrl_.process_key(k); });
             break;
-
+        }
         case WXK_SPACE:
-            ctrl_.process_key(sc::KeyEvent::special("SPC"));
+            submit_work([this]{ ctrl_.process_key(sc::KeyEvent::special("SPC")); });
             break;
-
         case WXK_ESCAPE:
-            if (ctrl_.input().active()) ctrl_.input().cancel();
+            // Cancels in-progress number entry. Goes through the runner
+            // for the same race-free reason as everything else, even
+            // though it doesn't allocate.
+            submit_work([this]{
+                if (ctrl_.input().active()) ctrl_.input().cancel();
+            });
             break;
-
         default:
             handled = false;
             break;
     }
 
     if (handled) {
-        clear_selections();
-        redraw();
-        // Don't Skip — we consumed it. EVT_CHAR won't fire.
+        // Don't Skip — we consumed it. EVT_CHAR won't fire. The
+        // submitted work's on_done callback will repaint via
+        // refresh_cache_and_redraw.
     } else {
         e.Skip();  // let EVT_CHAR translate this key
     }
@@ -916,7 +1016,7 @@ TrailPanel::TrailPanel(wxWindow* parent, CalcPanel* host)
 }
 
 void TrailPanel::refresh_from_state() {
-    auto ds = host_->controller().display();
+    const auto& ds = host_->display_cache();
 
     Freeze();
     Clear();

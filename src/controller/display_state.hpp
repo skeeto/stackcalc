@@ -39,6 +39,10 @@ struct DisplayState {
 
     // Stack depth
     int stack_depth = 0;
+
+    // True iff number entry (input state machine) is currently active.
+    // The GUI's cursor-blink timer only runs while this is true.
+    bool input_active = false;
 };
 
 } // namespace sc
