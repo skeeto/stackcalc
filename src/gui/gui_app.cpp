@@ -1,5 +1,6 @@
 #include "gui_app.hpp"
 #include "persistence.hpp"
+#include "version.hpp"
 #include <wx/caret.h>
 #include <wx/dcbuffer.h>
 #include <wx/file.h>
@@ -561,8 +562,13 @@ void StackCalcFrame::on_about(wxCommandEvent&) {
     // mojibake. Wide literals are converted by the compiler (with
     // /utf-8 on MSVC), so wx receives wchar_t directly with no
     // runtime conversion.
+    // wxT() is a token-pasting macro that uses double-indirection so a
+    // macro argument (STACKCALC_VERSION) gets expanded BEFORE L is
+    // pasted onto its value — i.e. wxT(STACKCALC_VERSION) becomes
+    // L"0.1.0", not LSTACKCALC_VERSION. That's the standard way to
+    // splice a generated string macro into wide literal concatenation.
     wxMessageBox(
-        wxT("stackcalc — RPN calculator\n\n")
+        wxT("stackcalc ") wxT(STACKCALC_VERSION) wxT(" — RPN calculator\n\n")
         wxT("An Emacs M-x calc clone with arbitrary-precision arithmetic.\n")
         wxT("See manual.md in the source tree for the full reference.\n\n")
         wxT("Built with:\n")

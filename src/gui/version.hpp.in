@@ -1,0 +1,13 @@
+#pragma once
+
+// Generated from version.hpp.in by CMake. The values come from the
+// project(... VERSION ...) declaration at the top of the root
+// CMakeLists.txt; bumping that one line propagates here, into the
+// About box, into the Windows manifest, and into the macOS bundle's
+// Info.plist.
+
+#define STACKCALC_VERSION       "@PROJECT_VERSION@"
+#define STACKCALC_VERSION_MAJOR @PROJECT_VERSION_MAJOR@
+#define STACKCALC_VERSION_MINOR @PROJECT_VERSION_MINOR@
+#define STACKCALC_VERSION_PATCH @PROJECT_VERSION_PATCH@
+#define STACKCALC_NAME          "stackcalc"

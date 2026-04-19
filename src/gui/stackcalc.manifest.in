@@ -1,8 +1,11 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
 
+  <!-- Version is the 4-component Win32 form (X.X.X.X). The first three
+       come from project(... VERSION ...) in the root CMakeLists; the
+       fourth is the build number, currently always 0. -->
   <assemblyIdentity
-      version="1.0.0.0"
+      version="@PROJECT_VERSION_MAJOR@.@PROJECT_VERSION_MINOR@.@PROJECT_VERSION_PATCH@.0"
       processorArchitecture="*"
       name="stackcalc"
       type="win32" />
