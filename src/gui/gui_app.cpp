@@ -356,20 +356,47 @@ CalcPanel::CalcPanel(wxWindow* parent)
               wxWANTS_CHARS | wxFULL_REPAINT_ON_RESIZE)
     , blink_timer_(this)
 {
-    SetBackgroundStyle(wxBG_STYLE_PAINT);  // for wxAutoBufferedPaintDC
+    SetBackgroundColour(kBgColor);
 
-    // Try to get a real monospace font
+    // Monospace font, used by both subwidgets.
     mono_font_ = wxFont(wxFontInfo(13).FaceName("Menlo"));
     if (!mono_font_.IsOk()) {
         mono_font_ = wxFont(13, wxFONTFAMILY_TELETYPE,
                             wxFONTSTYLE_NORMAL, wxFONTWEIGHT_NORMAL);
     }
 
-    Bind(wxEVT_PAINT,    &CalcPanel::on_paint,      this);
+    // Top: native rich-text widget for the stack — selectable + Ctrl+C.
+    stack_ctrl_ = new wxRichTextCtrl(
+        this, wxID_ANY, wxEmptyString,
+        wxDefaultPosition, wxDefaultSize,
+        wxRE_READONLY | wxRE_MULTILINE | wxBORDER_NONE);
+    stack_ctrl_->SetFont(mono_font_);
+    stack_ctrl_->SetBackgroundColour(kBgColor);
+    stack_ctrl_->SetForegroundColour(kValueColor);
+    // Wrapping is undesirable for stack values; turn it off.
+    stack_ctrl_->SetEditable(false);
+
+    // Bottom: custom-painted area for the dynamic UI.
+    edit_area_ = new EditArea(this, this);
+
+    auto* sizer = new wxBoxSizer(wxVERTICAL);
+    sizer->Add(stack_ctrl_, 1, wxEXPAND);
+    sizer->Add(edit_area_,  0, wxEXPAND);
+    SetSizer(sizer);
+
+    // Calculator key handling. Bind on the panel itself, AND on the
+    // stack widget — when the user clicks into the stack to start a
+    // selection, focus stays there, but subsequent typing still needs
+    // to reach the calculator. on_key_down skips unhandled keys, so the
+    // rich text widget's defaults (Ctrl+A, Ctrl+C, arrow keys, etc.)
+    // still work for selection.
     Bind(wxEVT_KEY_DOWN, &CalcPanel::on_key_down,   this);
     Bind(wxEVT_CHAR,     &CalcPanel::on_char,       this);
     Bind(wxEVT_TIMER,    &CalcPanel::on_blink_tick, this);
+    stack_ctrl_->Bind(wxEVT_KEY_DOWN, &CalcPanel::on_key_down, this);
+    stack_ctrl_->Bind(wxEVT_CHAR,     &CalcPanel::on_char,     this);
 
+    update_stack();
     // Blink timer is only started while number entry is active — see redraw().
 }
 
@@ -394,7 +421,9 @@ void CalcPanel::redraw() {
         blink_timer_.Stop();
         cursor_visible_ = true;
     }
-    Refresh();
+
+    update_stack();
+    edit_area_->Refresh();
 
     // If trail window is visible, push the latest entries
     auto* frame = static_cast<StackCalcFrame*>(GetParent());
@@ -405,133 +434,113 @@ void CalcPanel::redraw() {
 
 void CalcPanel::on_blink_tick(wxTimerEvent&) {
     cursor_visible_ = !cursor_visible_;
-    Refresh();
+    edit_area_->Refresh();
 }
 
-void CalcPanel::on_paint(wxPaintEvent&) {
-    wxAutoBufferedPaintDC dc(this);
-    dc.SetFont(mono_font_);
-
+void CalcPanel::update_stack() {
     auto ds = ctrl_.display();
-    wxSize size = GetClientSize();
 
-    // Background
+    stack_ctrl_->Freeze();
+    stack_ctrl_->Clear();
+
+    // Bottom-up labeling: the first entry in stack_entries is the deepest.
+    for (size_t i = 0; i < ds.stack_entries.size(); ++i) {
+        int n = ds.stack_depth - static_cast<int>(i);
+        stack_ctrl_->BeginTextColour(kLabelColor);
+        stack_ctrl_->WriteText(wxString::Format("%3d:  ", n));
+        stack_ctrl_->EndTextColour();
+
+        stack_ctrl_->BeginTextColour(kValueColor);
+        stack_ctrl_->WriteText(wxString::FromUTF8(ds.stack_entries[i].c_str()));
+        stack_ctrl_->EndTextColour();
+
+        if (i + 1 < ds.stack_entries.size()) stack_ctrl_->Newline();
+    }
+
+    stack_ctrl_->Thaw();
+    // Pin the latest entry to the bottom of the visible region.
+    stack_ctrl_->ShowPosition(stack_ctrl_->GetLastPosition());
+}
+
+// === EditArea: custom-painted bottom region ==================================
+
+EditArea::EditArea(wxWindow* parent, CalcPanel* host)
+    : wxPanel(parent, wxID_ANY, wxDefaultPosition, wxDefaultSize,
+              wxFULL_REPAINT_ON_RESIZE)
+    , host_(host)
+{
+    SetBackgroundStyle(wxBG_STYLE_PAINT);  // for wxAutoBufferedPaintDC
+    SetBackgroundColour(kBgColor);
+
+    // Compute desired height once from the font: marker line, entry line,
+    // mode line — three rows plus a separator gap, plus padding above and
+    // below. We reuse the host's font here.
+    wxClientDC dc(this);
+    dc.SetFont(host_->mono_font());
+    int line_h = dc.GetCharHeight();
+    int pad = FromDIP(4);
+    int sep_gap = FromDIP(3);
+    desired_height_ = pad + line_h + line_h + sep_gap + line_h + pad;
+    SetMinSize(wxSize(-1, desired_height_));
+
+    Bind(wxEVT_PAINT, &EditArea::on_paint, this);
+}
+
+void EditArea::on_paint(wxPaintEvent&) {
+    wxAutoBufferedPaintDC dc(this);
+    dc.SetFont(host_->mono_font());
     dc.SetBackground(wxBrush(kBgColor));
     dc.Clear();
 
-    // Use the font's line height for everything. Padding/gaps are in DIPs
-    // so they scale on high-DPI displays.
+    auto ds = host_->controller().display();
+    wxSize size = GetClientSize();
     int line_h = dc.GetCharHeight();
     int padding = FromDIP(4);
     int sep_gap = FromDIP(3);
-    int stack_gap = FromDIP(8);
 
-    int y = padding;
+    // ---- "." marker line ----
+    int marker_y = padding;
+    dc.SetTextForeground(kMarkerColor);
+    dc.DrawText("     .", padding, marker_y);
 
-    // ---- Top: error/info message ----
-    if (!ds.message.empty()) {
-        dc.SetTextForeground(kErrorColor);
-        dc.DrawText(ds.message, padding, y);
-        y += line_h;
-        // separator line
-        dc.SetPen(wxPen(kSeparatorColor));
-        dc.DrawLine(0, y + 1, size.GetWidth(), y + 1);
-        y += 4;
-    }
-
-    // ---- Bottom: mode line ----
-    int mode_y = size.GetHeight() - line_h - padding;
-    {
-        // separator above mode line
-        dc.SetPen(wxPen(kSeparatorColor));
-        dc.DrawLine(0, mode_y - sep_gap, size.GetWidth(), mode_y - sep_gap);
-
-        dc.SetTextForeground(kModeColor);
-        dc.DrawText(ds.mode_line, padding, mode_y);
-        wxCoord mode_w, mode_h;
-        dc.GetTextExtent(ds.mode_line, &mode_w, &mode_h);
-
-        // Flags / pending prefix in yellow
-        std::string flags;
-        if (ds.inverse_flag)    flags += " [I]";
-        if (ds.hyperbolic_flag) flags += " [H]";
-        if (ds.keep_args_flag)  flags += " [K]";
-        if (!ds.pending_prefix.empty()) {
-            flags += " [" + ds.pending_prefix + "-]";
-        }
-        if (!flags.empty()) {
-            dc.SetTextForeground(kFlagColor);
-            dc.DrawText(flags, padding + mode_w, mode_y);
-        }
-    }
-
-    // ---- Middle: stack region ----
-    // Render bottom-up: build all the lines we want to draw, then draw from
-    // the bottom of the available region upward so the latest entry is always
-    // pinned just above the mode line.
-    int stack_bottom = mode_y - stack_gap;
-    int stack_top = y;
-
-    struct Line {
-        wxString text;
-        wxColour color;
-        // For two-color "label + value" lines we draw twice; we represent that
-        // as two consecutive Lines where the value has a label_width offset.
-        // Every Line is constructed with an explicit x_offset; the default is
-        // just here to satisfy the language (a default member initializer can't
-        // capture a local variable, so we can't write `= padding`).
-        int x_offset = 0;
-    };
-    std::vector<Line> lines;
-
-    // Stack entries (numbered bottom-up)
-    for (size_t i = 0; i < ds.stack_entries.size(); i++) {
-        int n = ds.stack_depth - static_cast<int>(i);
-        wxString label = wxString::Format("%3d:", n);
-        wxString value = wxString::FromUTF8(ds.stack_entries[i].c_str());
-
-        // Single composite line — we draw label then value at the same y
-        lines.push_back({label, kLabelColor, padding});
-        wxCoord lw, lh;
-        dc.GetTextExtent(label + " ", &lw, &lh);
-        lines.push_back({value, kValueColor, padding + lw});
-        // Sentinel: empty text marks "next line"
-        lines.push_back({wxString(), kBgColor, 0});
-    }
-
-    // "." marker line
-    lines.push_back({"     .", kMarkerColor, padding});
-    lines.push_back({wxString(), kBgColor, 0});
-
-    // Entry text with optional cursor
+    // ---- Entry line (only when number entry is active) ----
+    int entry_y = marker_y + line_h;
     if (!ds.entry_text.empty()) {
         wxString et = wxString::FromUTF8(ds.entry_text.c_str());
-        if (cursor_visible_) et += "_";
-        lines.push_back({"     " + et, kEntryColor, padding});
-        lines.push_back({wxString(), kBgColor, 0});
+        if (host_->cursor_visible()) et += "_";
+        dc.SetTextForeground(kEntryColor);
+        dc.DrawText("     " + et, padding, entry_y);
     }
 
-    // Now draw, starting from bottom up. Lines come in groups separated by
-    // empty-text sentinels; one logical row may have 1 or 2 draw spans.
-    std::vector<std::vector<Line>> rows;
-    std::vector<Line> cur;
-    for (auto& l : lines) {
-        if (l.text.empty()) {
-            if (!cur.empty()) { rows.push_back(std::move(cur)); cur.clear(); }
-        } else {
-            cur.push_back(l);
-        }
-    }
-    if (!cur.empty()) rows.push_back(std::move(cur));
+    // ---- Mode line at the bottom of this region ----
+    int mode_y = size.GetHeight() - line_h - padding;
+    dc.SetPen(wxPen(kSeparatorColor));
+    dc.DrawLine(0, mode_y - sep_gap, size.GetWidth(), mode_y - sep_gap);
 
-    int row_y = stack_bottom - line_h;
-    for (auto it = rows.rbegin(); it != rows.rend(); ++it) {
-        if (row_y < stack_top) break;  // clip overflow at the top
-        for (auto& span : *it) {
-            dc.SetTextForeground(span.color);
-            dc.DrawText(span.text, span.x_offset, row_y);
-        }
-        row_y -= line_h;
+    dc.SetTextForeground(kModeColor);
+    dc.DrawText(ds.mode_line, padding, mode_y);
+    wxCoord mode_w, mode_h;
+    dc.GetTextExtent(ds.mode_line, &mode_w, &mode_h);
+
+    std::string flags;
+    if (ds.inverse_flag)    flags += " [I]";
+    if (ds.hyperbolic_flag) flags += " [H]";
+    if (ds.keep_args_flag)  flags += " [K]";
+    if (!ds.pending_prefix.empty()) flags += " [" + ds.pending_prefix + "-]";
+    if (!flags.empty()) {
+        dc.SetTextForeground(kFlagColor);
+        dc.DrawText(flags, padding + mode_w, mode_y);
+    }
+
+    // ---- Top: error/info message overlaid above the marker line if present ----
+    // (Drawn last so it covers anything else, but still inside the panel.)
+    if (!ds.message.empty()) {
+        // Currently we paint the message at the very top of the edit area,
+        // squeezing slightly into the marker row. Acceptable since it only
+        // appears transiently on errors.
+        dc.SetBackground(wxBrush(kBgColor));
+        dc.SetTextForeground(kErrorColor);
+        dc.DrawText(ds.message, padding, 0);
     }
 }
 

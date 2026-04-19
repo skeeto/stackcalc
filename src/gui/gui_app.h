@@ -2,11 +2,13 @@
 
 #include <wx/wx.h>
 #include <wx/timer.h>
+#include <wx/richtext/richtextctrl.h>
 #include <unordered_map>
 #include "controller.h"
 
 class CalcPanel;
 class TrailFrame;
+class EditArea;
 
 // Main application class
 class StackCalcApp : public wxApp {
@@ -47,33 +49,59 @@ private:
     int next_menu_id_;
 };
 
-// Custom-painted calculator display
+// Hosts the calculator display: a wxRichTextCtrl up top for the
+// (selectable, copyable) stack, and a custom-painted EditArea below
+// for the dynamic UI elements (`.` marker, blinking entry line,
+// mode line). All keyboard input is handled here.
 class CalcPanel : public wxPanel {
 public:
     explicit CalcPanel(wxWindow* parent);
 
     sc::Controller& controller() { return ctrl_; }
+    EditArea* edit_area() { return edit_area_; }
+    bool cursor_visible() const { return cursor_visible_; }
+    const wxFont& mono_font() const { return mono_font_; }
 
-    // Re-render after state change
+    // Re-render after state change.
     void redraw();
 
     // Feed a string of characters to the controller, then redraw.
-    // Used by menu items so they exercise the same dispatch path as
-    // typing the keystrokes directly.
     void dispatch_keys(const std::string& keys);
+
+    // Public so the frame-level char hook can dispatch into them.
+    void on_key_down(wxKeyEvent& e);
+    void on_char(wxKeyEvent& e);
+
+private:
+    void on_blink_tick(wxTimerEvent& e);
+    void update_stack();
+    void toggle_trail();
+
+    sc::Controller    ctrl_;
+    wxFont            mono_font_;
+    wxTimer           blink_timer_;
+    bool              cursor_visible_ = true;
+    wxRichTextCtrl*   stack_ctrl_ = nullptr;
+    EditArea*         edit_area_  = nullptr;
+};
+
+// Custom-painted bottom subpanel: separator line, "." marker,
+// blinking entry line, separator line, mode line. Keeps a back
+// pointer to its CalcPanel so it can read the controller state and
+// the cursor-blink phase.
+class EditArea : public wxPanel {
+public:
+    EditArea(wxWindow* parent, CalcPanel* host);
+
+    // Height that this control wants in pixels (computed from the
+    // monospace font metrics).
+    int desired_height() const { return desired_height_; }
 
 private:
     void on_paint(wxPaintEvent& e);
-    void on_key_down(wxKeyEvent& e);
-    void on_char(wxKeyEvent& e);
-    void on_blink_tick(wxTimerEvent& e);
 
-    void toggle_trail();
-
-    sc::Controller ctrl_;
-    wxFont mono_font_;
-    wxTimer blink_timer_;
-    bool cursor_visible_ = true;
+    CalcPanel* host_;
+    int        desired_height_ = 0;
 };
 
 // Separate trail window

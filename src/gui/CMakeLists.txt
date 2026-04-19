@@ -6,6 +6,7 @@ target_link_libraries(stackcalc-gui PRIVATE
     stackcalc-controller
     wx::core
     wx::base
+    wx::richtext
 )
 
 # Drop the GUI executable (or .app bundle on macOS) into build/bin/
