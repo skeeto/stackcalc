@@ -248,6 +248,35 @@ TEST(ControllerTest, ArbitraryRadixFromStack) {
     EXPECT_TRUE(ds.message.empty());
 }
 
+// User-reported: in radix 16, `d g` couldn't reach the grouping command
+// because input_state.feed() was eagerly consuming `d` as a hex digit
+// (starting a new number entry) before the keymap dispatcher saw it.
+TEST(ControllerTest, PrefixCommandsWorkInHexRadix) {
+    Controller ctrl;
+    feed_chars(ctrl, "16"); feed_special(ctrl, "RET");
+    feed_chars(ctrl, "dr");                 // set radix=16
+    EXPECT_EQ(ctrl.display().stack_depth, 0);
+    feed_chars(ctrl, "dg");                 // toggle grouping (was failing)
+    EXPECT_TRUE(ctrl.display().message.empty())
+        << "got message: " << ctrl.display().message;
+    // Verify grouping actually toggled: a big hex value should now have
+    // separators.
+    feed_chars(ctrl, "1048575"); feed_special(ctrl, "RET");
+    auto ds = ctrl.display();
+    EXPECT_NE(ds.stack_entries.back().find(','), std::string::npos)
+        << "expected a thousands separator, got: " << ds.stack_entries.back();
+}
+
+// Hex literals can still be entered explicitly via the radix prefix `#`,
+// even though bare letters now run their commands instead of starting a
+// number entry.
+TEST(ControllerTest, HexLiteralViaRadixPrefixStillWorks) {
+    Controller ctrl;
+    feed_chars(ctrl, "16#FF"); feed_special(ctrl, "RET");
+    EXPECT_EQ(ctrl.display().stack_depth, 1);
+    EXPECT_EQ(ctrl.display().stack_entries.back(), "255");
+}
+
 TEST(ControllerTest, ArbitraryRadixRejectsOutOfRange) {
     Controller ctrl;
     feed_chars(ctrl, "100"); feed_special(ctrl, "RET");  // > 36

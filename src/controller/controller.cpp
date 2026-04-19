@@ -32,6 +32,27 @@ bool Controller::process_key(const KeyEvent& key) {
         return true;
     }
 
+    // When no number entry is in progress, prefer keymap bindings over
+    // starting a new entry. Otherwise, in radix > 10, command keys that
+    // happen to be hex digits ('d', 'F', 'A', 'B', 'C', 'E', etc.) would
+    // be silently swallowed by the number-entry state machine and the
+    // user could no longer reach those commands.
+    if (key.type == KeyEvent::Char && !input_.active()) {
+        if (keymap_.is_prefix(kn)) {
+            pending_prefix_ = kn;
+            return true;
+        }
+        if (auto cmd = keymap_.lookup(kn)) {
+            try {
+                execute(*cmd);
+            } catch (const std::exception& e) {
+                stack_.discard_command();
+                message_ = e.what();
+            }
+            return true;
+        }
+    }
+
     // Try to feed to number entry first (digits, decimal, sign, etc.)
     if (key.type == KeyEvent::Char && input_.feed(key.ch, stack_.state())) {
         return true;
