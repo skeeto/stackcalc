@@ -516,11 +516,18 @@ void StackCalcFrame::on_char_hook(wxKeyEvent& e) {
 }
 
 void StackCalcFrame::on_about(wxCommandEvent&) {
+    // Use wide string literals (via wxT) for any text containing
+    // non-ASCII characters. wxString's narrow-string constructor
+    // defaults to wxConvLibc, which on Windows is the system "ANSI"
+    // code page (Windows-1252) — that mangles UTF-8 bytes into
+    // mojibake. Wide literals are converted by the compiler (with
+    // /utf-8 on MSVC), so wx receives wchar_t directly with no
+    // runtime conversion.
     wxMessageBox(
-        "stackcalc — RPN calculator\n\n"
-        "An Emacs M-x calc clone with arbitrary-precision arithmetic.\n"
-        "See manual.md in the source tree for the full reference.",
-        "About stackcalc", wxOK | wxICON_INFORMATION, this);
+        wxT("stackcalc — RPN calculator\n\n")
+        wxT("An Emacs M-x calc clone with arbitrary-precision arithmetic.\n")
+        wxT("See manual.md in the source tree for the full reference."),
+        wxT("About stackcalc"), wxOK | wxICON_INFORMATION, this);
 }
 
 void StackCalcFrame::on_quit(wxCommandEvent&) {
@@ -943,14 +950,14 @@ void TrailPanel::refresh_from_state() {
 // === StackCalcApp =============================================================
 
 bool StackCalcApp::OnInit() {
-    // Treat narrow string literals as UTF-8 when constructing wxStrings.
-    // wx's default (wxConvLibc) uses the platform's "ANSI" code page on
-    // Windows — typically Windows-1252 — and silently mangles UTF-8
-    // multibyte sequences (e.g. an em-dash becomes three garbage chars).
-    // Our sources are UTF-8 (and we pass /utf-8 to MSVC), so tell wx to
-    // interpret narrow input as UTF-8 too. This is a no-op on macOS/
-    // Linux where wxConvLibc already happens to be UTF-8 in modern
-    // locales, but it removes the platform dependency entirely.
+    // Set the global "current" narrow-string conversion to UTF-8.
+    // Note: this does NOT affect wxString(const char*) constructors —
+    // those bind to wxConvLibc at compile time. It only affects the
+    // various wx APIs that explicitly consult wxConvCurrent (some
+    // legacy printf paths, env-var helpers, etc.). For known-UTF-8
+    // literals containing non-ASCII characters, use wxT("...") /
+    // L"..." instead so wx never has to reinterpret narrow bytes at
+    // all. Kept here as defense-in-depth.
     wxConvCurrent = &wxConvUTF8;
 
     // Drives wxStandardPaths::GetUserDataDir() to a "stackcalc" subdir.
