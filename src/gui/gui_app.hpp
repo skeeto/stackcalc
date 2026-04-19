@@ -102,6 +102,12 @@ public:
     // Re-render after state change.
     void redraw();
 
+    // Snapshot the controller's current display into the cache, then
+    // redraw. For state mutations that bypass the runner (load on
+    // startup, reset, etc.). UI-thread only — must be called when
+    // no worker job is in flight.
+    void refresh_display();
+
     // Feed a string of characters to the controller, then redraw.
     // Routes through the runner like every other input.
     void dispatch_keys(const std::string& keys);

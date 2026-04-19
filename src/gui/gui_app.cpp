@@ -181,7 +181,10 @@ StackCalcFrame::StackCalcFrame()
         if (read_state_file(state_file_path(), contents)) {
             std::istringstream in(contents);
             sc::persistence::load(in, panel_->controller());
-            panel_->redraw();
+            // refresh_display (not just redraw) — load mutated the
+            // controller, but our cached snapshot is still the empty
+            // state from the panel's constructor.
+            panel_->refresh_display();
             parse_window_line(contents, saved_w, saved_h, saved_sash);
         }
     }
@@ -499,9 +502,13 @@ void StackCalcFrame::build_menus() {
     Bind(wxEVT_MENU, &StackCalcFrame::on_quit,        this, wxID_EXIT);
     Bind(wxEVT_MENU, &StackCalcFrame::on_about,       this, wxID_ABOUT);
     Bind(wxEVT_MENU, [this](wxCommandEvent&) {
+        // Reset bypasses the runner (it's a single fast mutation), but
+        // we still have to honour the busy guard — otherwise it'd race
+        // with an in-flight worker job touching the same controller.
+        if (panel_->is_busy()) return;
         panel_->controller().reset();
-        panel_->redraw();
-        panel_->SetFocus();
+        panel_->refresh_display();
+        panel_->focus_calc();
     }, ID_Reset);
     Bind(wxEVT_MENU, &StackCalcFrame::on_menu_dispatch,
          this, ID_DispatchBase, ID_DispatchEnd);
@@ -741,6 +748,11 @@ void CalcPanel::submit_work(std::function<void()> work) {
                 apply_snapshot_and_redraw(std::move(*snapshot));
             });
         });
+}
+
+void CalcPanel::refresh_display() {
+    cached_display_ = ctrl_.display();
+    redraw();
 }
 
 void CalcPanel::apply_snapshot_and_redraw(sc::DisplayState snapshot) {
