@@ -84,10 +84,36 @@ void StackCalcFrame::build_menus() {
     add_action(edit, "&Undo\tCtrl+Z",        "U");
     add_action(edit, "&Redo\tCtrl+Y",        "D");
     edit->AppendSeparator();
-    add_action(edit, "&Drop\tBack",          "");  // DEL handled by key callback
-    add_action(edit, "S&wap\tTab",           "");  // TAB handled by key callback
-    add_action(edit, "Roll Up\tAlt+Tab",     "");  // M-TAB handled by key callback
-    add_action(edit, "Last Args\tAlt+Enter", "");  // M-RET handled by key callback
+    // Stack ops: avoid wx accelerators here because they would compete
+    // with our CHAR_HOOK for the actual keystrokes (Back/Tab/Alt+Tab/
+    // Alt+Enter) and break their context-aware behavior (e.g., Backspace
+    // edits the entry when active, drops otherwise). Show the keystroke
+    // in parens like the other menu items, and bind a per-item lambda
+    // that synthesizes the right Special/Modified KeyEvent on click.
+    auto add_special = [&](wxMenu* m, const wxString& label, const char* name) {
+        int id = next_menu_id_++;
+        m->Append(id, label);
+        Bind(wxEVT_MENU, [this, name](wxCommandEvent&) {
+            try { panel_->controller().process_key(sc::KeyEvent::special(name)); }
+            catch (...) {}
+            panel_->redraw();
+            panel_->SetFocus();
+        }, id);
+    };
+    auto add_modified = [&](wxMenu* m, const wxString& label, const char* name) {
+        int id = next_menu_id_++;
+        m->Append(id, label);
+        Bind(wxEVT_MENU, [this, name](wxCommandEvent&) {
+            try { panel_->controller().process_key(sc::KeyEvent::modified(name)); }
+            catch (...) {}
+            panel_->redraw();
+            panel_->SetFocus();
+        }, id);
+    };
+    add_special (edit, "&Drop (Back)",            "DEL");
+    add_special (edit, "S&wap (Tab)",             "TAB");
+    add_modified(edit, "Roll Up (Alt+Tab)",       "M-TAB");
+    add_modified(edit, "Last Args (Alt+Enter)",   "M-RET");
     edit->AppendSeparator();
     add_action(edit, "Toggle Inverse Flag",     "I");
     add_action(edit, "Toggle Hyperbolic Flag",  "H");
@@ -321,6 +347,45 @@ void StackCalcFrame::build_menus() {
     Bind(wxEVT_MENU, &StackCalcFrame::on_about,       this, wxID_ABOUT);
     Bind(wxEVT_MENU, &StackCalcFrame::on_menu_dispatch,
          this, ID_DispatchBase, ID_DispatchEnd);
+
+    // Special-key catcher (see on_char_hook for the rationale).
+    Bind(wxEVT_CHAR_HOOK, &StackCalcFrame::on_char_hook, this);
+}
+
+void StackCalcFrame::on_char_hook(wxKeyEvent& e) {
+    // Ctrl combinations: let menu accelerators (Ctrl+Z/Y/Q) and the rich
+    // text widget's defaults (Ctrl+A/C) win.
+    if (e.ControlDown() || e.RawControlDown()) {
+        e.Skip();
+        return;
+    }
+
+    int code = e.GetKeyCode();
+
+    // Function keys: let menu accelerators (F2 = trail) handle them.
+    if (code >= WXK_F1 && code <= WXK_F12) {
+        e.Skip();
+        return;
+    }
+
+    // Calculator special keys. These are unambiguous virtual key codes,
+    // unaffected by the unicode-translation issue that affects shifted
+    // printable characters in CHAR_HOOK on macOS. Catching them here
+    // prevents the wxRichTextCtrl from swallowing them when it has
+    // focus from a click-to-select. Alt+Enter / Alt+Tab go through too
+    // (the panel's on_key_down checks the alt modifier).
+    if (code == WXK_RETURN || code == WXK_NUMPAD_ENTER ||
+        code == WXK_BACK   || code == WXK_DELETE       ||
+        code == WXK_TAB    || code == WXK_SPACE        ||
+        code == WXK_ESCAPE) {
+        panel_->on_key_down(e);
+        return;
+    }
+
+    // Printable characters: skip and let the normal EVT_CHAR routing
+    // (via the bindings on stack_ctrl_ and the panel) deliver them
+    // with unicode translation already done.
+    e.Skip();
 }
 
 void StackCalcFrame::on_about(wxCommandEvent&) {
@@ -365,7 +430,10 @@ CalcPanel::CalcPanel(wxWindow* parent)
                             wxFONTSTYLE_NORMAL, wxFONTWEIGHT_NORMAL);
     }
 
-    // Top: native rich-text widget for the stack — selectable + Ctrl+C.
+    // Top: custom-painted area for message + entry line.
+    top_bar_ = new TopBar(this, this);
+
+    // Middle: native rich-text widget for the stack — selectable + Ctrl+C.
     stack_ctrl_ = new wxRichTextCtrl(
         this, wxID_ANY, wxEmptyString,
         wxDefaultPosition, wxDefaultSize,
@@ -373,15 +441,15 @@ CalcPanel::CalcPanel(wxWindow* parent)
     stack_ctrl_->SetFont(mono_font_);
     stack_ctrl_->SetBackgroundColour(kBgColor);
     stack_ctrl_->SetForegroundColour(kValueColor);
-    // Wrapping is undesirable for stack values; turn it off.
     stack_ctrl_->SetEditable(false);
 
-    // Bottom: custom-painted area for the dynamic UI.
-    edit_area_ = new EditArea(this, this);
+    // Bottom: custom-painted mode line.
+    mode_bar_ = new ModeBar(this, this);
 
     auto* sizer = new wxBoxSizer(wxVERTICAL);
+    sizer->Add(top_bar_,    0, wxEXPAND);
     sizer->Add(stack_ctrl_, 1, wxEXPAND);
-    sizer->Add(edit_area_,  0, wxEXPAND);
+    sizer->Add(mode_bar_,   0, wxEXPAND);
     SetSizer(sizer);
 
     // Calculator key handling. Bind on the panel itself, AND on the
@@ -423,7 +491,8 @@ void CalcPanel::redraw() {
     }
 
     update_stack();
-    edit_area_->Refresh();
+    top_bar_->Refresh();
+    mode_bar_->Refresh();
 
     // If trail window is visible, push the latest entries
     auto* frame = static_cast<StackCalcFrame*>(GetParent());
@@ -434,7 +503,8 @@ void CalcPanel::redraw() {
 
 void CalcPanel::on_blink_tick(wxTimerEvent&) {
     cursor_visible_ = !cursor_visible_;
-    edit_area_->Refresh();
+    // Cursor lives on the entry line in the top bar now.
+    top_bar_->Refresh();
 }
 
 void CalcPanel::update_stack() {
@@ -443,50 +513,55 @@ void CalcPanel::update_stack() {
     stack_ctrl_->Freeze();
     stack_ctrl_->Clear();
 
-    // Bottom-up labeling: the first entry in stack_entries is the deepest.
-    for (size_t i = 0; i < ds.stack_entries.size(); ++i) {
-        int n = ds.stack_depth - static_cast<int>(i);
+    // Top-of-stack rendered at the TOP of the widget, growing downward.
+    // ds.stack_entries[back()] is the top; iterate in reverse and number
+    // 1, 2, 3, ... from there.
+    int n = static_cast<int>(ds.stack_entries.size());
+    for (int j = 0; j < n; ++j) {
+        int idx = n - 1 - j;        // entry index in stack_entries
+        int label = j + 1;          // 1 = top of stack
+
         stack_ctrl_->BeginTextColour(kLabelColor);
-        stack_ctrl_->WriteText(wxString::Format("%3d:  ", n));
+        stack_ctrl_->WriteText(wxString::Format("%3d:  ", label));
         stack_ctrl_->EndTextColour();
 
         stack_ctrl_->BeginTextColour(kValueColor);
-        stack_ctrl_->WriteText(wxString::FromUTF8(ds.stack_entries[i].c_str()));
+        stack_ctrl_->WriteText(wxString::FromUTF8(ds.stack_entries[idx].c_str()));
         stack_ctrl_->EndTextColour();
 
-        if (i + 1 < ds.stack_entries.size()) stack_ctrl_->Newline();
+        if (j + 1 < n) stack_ctrl_->Newline();
     }
 
     stack_ctrl_->Thaw();
-    // Pin the latest entry to the bottom of the visible region.
-    stack_ctrl_->ShowPosition(stack_ctrl_->GetLastPosition());
+    // Top of the stack is at line 0; scroll there so the user always
+    // sees the most recent entry just below the entry line.
+    stack_ctrl_->ShowPosition(0);
 }
 
-// === EditArea: custom-painted bottom region ==================================
+// === TopBar: custom-painted top region (message + entry) =====================
 
-EditArea::EditArea(wxWindow* parent, CalcPanel* host)
+TopBar::TopBar(wxWindow* parent, CalcPanel* host)
     : wxPanel(parent, wxID_ANY, wxDefaultPosition, wxDefaultSize,
               wxFULL_REPAINT_ON_RESIZE)
     , host_(host)
 {
-    SetBackgroundStyle(wxBG_STYLE_PAINT);  // for wxAutoBufferedPaintDC
+    SetBackgroundStyle(wxBG_STYLE_PAINT);
     SetBackgroundColour(kBgColor);
 
-    // Compute desired height once from the font: marker line, entry line,
-    // mode line — three rows plus a separator gap, plus padding above and
-    // below. We reuse the host's font here.
     wxClientDC dc(this);
     dc.SetFont(host_->mono_font());
     int line_h = dc.GetCharHeight();
     int pad = FromDIP(4);
     int sep_gap = FromDIP(3);
-    desired_height_ = pad + line_h + line_h + sep_gap + line_h + pad;
+    // Two text rows: message + entry-with-marker. Plus separator under
+    // the entry line that visually anchors the stack right below.
+    desired_height_ = pad + line_h + line_h + sep_gap + pad;
     SetMinSize(wxSize(-1, desired_height_));
 
-    Bind(wxEVT_PAINT, &EditArea::on_paint, this);
+    Bind(wxEVT_PAINT, &TopBar::on_paint, this);
 }
 
-void EditArea::on_paint(wxPaintEvent&) {
+void TopBar::on_paint(wxPaintEvent&) {
     wxAutoBufferedPaintDC dc(this);
     dc.SetFont(host_->mono_font());
     dc.SetBackground(wxBrush(kBgColor));
@@ -498,25 +573,70 @@ void EditArea::on_paint(wxPaintEvent&) {
     int padding = FromDIP(4);
     int sep_gap = FromDIP(3);
 
-    // ---- "." marker line ----
-    int marker_y = padding;
-    dc.SetTextForeground(kMarkerColor);
-    dc.DrawText("     .", padding, marker_y);
+    // ---- Row 0: message (red) — only when present ----
+    int msg_y = padding;
+    if (!ds.message.empty()) {
+        dc.SetTextForeground(kErrorColor);
+        dc.DrawText(ds.message, padding, msg_y);
+    }
 
-    // ---- Entry line (only when number entry is active) ----
-    int entry_y = marker_y + line_h;
+    // ---- Row 1: "." marker + entry text (with blinking cursor) ----
+    int entry_y = msg_y + line_h;
+    dc.SetTextForeground(kMarkerColor);
+    dc.DrawText("  .  ", padding, entry_y);  // align with stack labels
     if (!ds.entry_text.empty()) {
+        wxCoord marker_w, marker_h;
+        dc.GetTextExtent("  .  ", &marker_w, &marker_h);
         wxString et = wxString::FromUTF8(ds.entry_text.c_str());
         if (host_->cursor_visible()) et += "_";
         dc.SetTextForeground(kEntryColor);
-        dc.DrawText("     " + et, padding, entry_y);
+        dc.DrawText(et, padding + marker_w, entry_y);
     }
 
-    // ---- Mode line at the bottom of this region ----
-    int mode_y = size.GetHeight() - line_h - padding;
+    // ---- Separator below the entry line, anchoring the stack ----
+    int sep_y = entry_y + line_h + sep_gap / 2;
     dc.SetPen(wxPen(kSeparatorColor));
-    dc.DrawLine(0, mode_y - sep_gap, size.GetWidth(), mode_y - sep_gap);
+    dc.DrawLine(0, sep_y, size.GetWidth(), sep_y);
+}
 
+// === ModeBar: custom-painted bottom region (mode line + flags) ===============
+
+ModeBar::ModeBar(wxWindow* parent, CalcPanel* host)
+    : wxPanel(parent, wxID_ANY, wxDefaultPosition, wxDefaultSize,
+              wxFULL_REPAINT_ON_RESIZE)
+    , host_(host)
+{
+    SetBackgroundStyle(wxBG_STYLE_PAINT);
+    SetBackgroundColour(kBgColor);
+
+    wxClientDC dc(this);
+    dc.SetFont(host_->mono_font());
+    int line_h = dc.GetCharHeight();
+    int pad = FromDIP(4);
+    int sep_gap = FromDIP(3);
+    desired_height_ = sep_gap + pad + line_h + pad;
+    SetMinSize(wxSize(-1, desired_height_));
+
+    Bind(wxEVT_PAINT, &ModeBar::on_paint, this);
+}
+
+void ModeBar::on_paint(wxPaintEvent&) {
+    wxAutoBufferedPaintDC dc(this);
+    dc.SetFont(host_->mono_font());
+    dc.SetBackground(wxBrush(kBgColor));
+    dc.Clear();
+
+    auto ds = host_->controller().display();
+    wxSize size = GetClientSize();
+    int line_h = dc.GetCharHeight();
+    int padding = FromDIP(4);
+    int sep_gap = FromDIP(3);
+
+    // Separator above the mode line (anchors the stack visually).
+    dc.SetPen(wxPen(kSeparatorColor));
+    dc.DrawLine(0, sep_gap / 2, size.GetWidth(), sep_gap / 2);
+
+    int mode_y = size.GetHeight() - line_h - padding;
     dc.SetTextForeground(kModeColor);
     dc.DrawText(ds.mode_line, padding, mode_y);
     wxCoord mode_w, mode_h;
@@ -530,17 +650,6 @@ void EditArea::on_paint(wxPaintEvent&) {
     if (!flags.empty()) {
         dc.SetTextForeground(kFlagColor);
         dc.DrawText(flags, padding + mode_w, mode_y);
-    }
-
-    // ---- Top: error/info message overlaid above the marker line if present ----
-    // (Drawn last so it covers anything else, but still inside the panel.)
-    if (!ds.message.empty()) {
-        // Currently we paint the message at the very top of the edit area,
-        // squeezing slightly into the marker row. Acceptable since it only
-        // appears transiently on errors.
-        dc.SetBackground(wxBrush(kBgColor));
-        dc.SetTextForeground(kErrorColor);
-        dc.DrawText(ds.message, padding, 0);
     }
 }
 

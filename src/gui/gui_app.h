@@ -8,7 +8,8 @@
 
 class CalcPanel;
 class TrailFrame;
-class EditArea;
+class TopBar;
+class ModeBar;
 
 // Main application class
 class StackCalcApp : public wxApp {
@@ -24,6 +25,13 @@ public:
     void on_toggle_trail(wxCommandEvent& e);
     void on_quit(wxCommandEvent& e);
     void on_about(wxCommandEvent& e);
+
+    // Frame-level keystroke hook: catches special keys (Enter, Tab, Back,
+    // Del, Esc, Alt-modified) so the wxRichTextCtrl doesn't swallow them
+    // when it has focus from a click-to-select. Printable characters are
+    // intentionally skipped here and routed via the panel's wxEVT_CHAR
+    // bindings, where unicode translation is reliable.
+    void on_char_hook(wxKeyEvent& e);
 
     // Single dispatcher for every menu item that just feeds keystrokes
     // to the controller. Looks up event.GetId() in menu_dispatch_.
@@ -49,16 +57,18 @@ private:
     int next_menu_id_;
 };
 
-// Hosts the calculator display: a wxRichTextCtrl up top for the
-// (selectable, copyable) stack, and a custom-painted EditArea below
-// for the dynamic UI elements (`.` marker, blinking entry line,
-// mode line). All keyboard input is handled here.
+// Hosts the calculator display, top to bottom:
+//   TopBar          custom-painted: message + "." marker + entry line
+//   wxRichTextCtrl  selectable stack — top of stack at the TOP, growing
+//                   downward (1: just below entry, 2:, 3:, …)
+//   ModeBar         custom-painted: mode line + flag indicators
 class CalcPanel : public wxPanel {
 public:
     explicit CalcPanel(wxWindow* parent);
 
     sc::Controller& controller() { return ctrl_; }
-    EditArea* edit_area() { return edit_area_; }
+    TopBar*  top_bar()  { return top_bar_; }
+    ModeBar* mode_bar() { return mode_bar_; }
     bool cursor_visible() const { return cursor_visible_; }
     const wxFont& mono_font() const { return mono_font_; }
 
@@ -81,25 +91,32 @@ private:
     wxFont            mono_font_;
     wxTimer           blink_timer_;
     bool              cursor_visible_ = true;
+    TopBar*           top_bar_   = nullptr;
     wxRichTextCtrl*   stack_ctrl_ = nullptr;
-    EditArea*         edit_area_  = nullptr;
+    ModeBar*          mode_bar_  = nullptr;
 };
 
-// Custom-painted bottom subpanel: separator line, "." marker,
-// blinking entry line, separator line, mode line. Keeps a back
-// pointer to its CalcPanel so it can read the controller state and
-// the cursor-blink phase.
-class EditArea : public wxPanel {
+// Custom-painted top subpanel: error/info message (when present) and
+// the "." marker + blinking entry line. Two rows tall (height fixed
+// for stable layout).
+class TopBar : public wxPanel {
 public:
-    EditArea(wxWindow* parent, CalcPanel* host);
-
-    // Height that this control wants in pixels (computed from the
-    // monospace font metrics).
+    TopBar(wxWindow* parent, CalcPanel* host);
     int desired_height() const { return desired_height_; }
-
 private:
     void on_paint(wxPaintEvent& e);
+    CalcPanel* host_;
+    int        desired_height_ = 0;
+};
 
+// Custom-painted bottom subpanel: mode line + flag/pending-prefix
+// indicators. One row tall.
+class ModeBar : public wxPanel {
+public:
+    ModeBar(wxWindow* parent, CalcPanel* host);
+    int desired_height() const { return desired_height_; }
+private:
+    void on_paint(wxPaintEvent& e);
     CalcPanel* host_;
     int        desired_height_ = 0;
 };
