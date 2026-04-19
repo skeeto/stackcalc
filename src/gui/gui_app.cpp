@@ -1,6 +1,5 @@
 #include "gui_app.hpp"
 #include "persistence.hpp"
-#include <wx/caret.h>
 #include <wx/dcbuffer.h>
 #include <wx/file.h>
 #include <wx/filename.h>
@@ -564,15 +563,11 @@ CalcPanel::CalcPanel(wxWindow* parent)
     stack_ctrl_->SetBackgroundColour(kBgColor);
     stack_ctrl_->SetForegroundColour(kValueColor);
     stack_ctrl_->SetEditable(false);
-    // Hide the text-insertion caret. It's read-only — the caret only
-    // adds visual noise (and on macOS draws in a near-invisible dark
-    // color over our dark background). Selection highlight is separate
-    // and still works.
-    {
-        auto* hidden = new wxCaret(stack_ctrl_, wxSize(0, 0));
-        stack_ctrl_->SetCaret(hidden);
-        hidden->Hide();
-    }
+    // (Tried installing a hidden wxCaret here to suppress the dark
+    // caret on macOS, but it caused a reactivation crash on Cmd+Tab
+    // back into the app — wxRichTextCtrl draws its own caret and
+    // doesn't tolerate a foreign zero-size wxCaret being substituted.
+    // Live with the visual quirk for now.)
 
     // Bottom: custom-painted mode line.
     mode_bar_ = new ModeBar(this, this);
@@ -808,6 +803,22 @@ void CalcPanel::on_key_down(wxKeyEvent& e) {
     int code = e.GetKeyCode();
     bool handled = true;
 
+    // Ctrl/Cmd-modified keys are reserved for the OS and menu
+    // accelerators (Cmd+Q quit, Cmd+W close, Cmd+Tab app switcher,
+    // Cmd+C copy, etc.). Only the two we deliberately mapped onto
+    // Ctrl modifiers — Z and Y for undo/redo — are claimed here;
+    // everything else falls through. Without this guard, e.g.
+    // Cmd+Tab on macOS would be processed as our SWAP, which is
+    // wrong and (during reactivation) appears to confuse macOS.
+    if (ctrl) {
+        if (code == 'Z')      ctrl_.process_key(sc::KeyEvent::character('U'));
+        else if (code == 'Y') ctrl_.process_key(sc::KeyEvent::character('D'));
+        else { e.Skip(); return; }
+        clear_selections();
+        redraw();
+        return;
+    }
+
     switch (code) {
         case WXK_RETURN:
         case WXK_NUMPAD_ENTER:
@@ -836,22 +847,6 @@ void CalcPanel::on_key_down(wxKeyEvent& e) {
 
         case WXK_ESCAPE:
             if (ctrl_.input().active()) ctrl_.input().cancel();
-            break;
-
-        case 'Z':
-            if (ctrl) {
-                ctrl_.process_key(sc::KeyEvent::character('U'));
-            } else {
-                handled = false;
-            }
-            break;
-
-        case 'Y':
-            if (ctrl) {
-                ctrl_.process_key(sc::KeyEvent::character('D'));
-            } else {
-                handled = false;
-            }
             break;
 
         default:
@@ -885,11 +880,6 @@ TrailPanel::TrailPanel(wxWindow* parent, CalcPanel* host)
     SetBackgroundColour(kBgColor);
     SetForegroundColour(kValueColor);
     SetEditable(false);
-    {
-        auto* hidden = new wxCaret(this, wxSize(0, 0));
-        SetCaret(hidden);
-        hidden->Hide();
-    }
 
     // Forward keystrokes to the calculator so typing still works while
     // the trail widget has focus from a click-to-select. Same pattern as
