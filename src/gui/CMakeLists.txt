@@ -30,7 +30,19 @@ set_target_properties(stackcalc PROPERTIES
     MACOSX_BUNDLE_SHORT_VERSION_STRING   "${PROJECT_VERSION}"
     MACOSX_BUNDLE_GUI_IDENTIFIER         "com.nullprogram.stackcalc"
     MACOSX_BUNDLE_INFO_STRING            "stackcalc ${PROJECT_VERSION}"
+    MACOSX_BUNDLE_ICON_FILE              "icon.icns"
 )
+
+# Bundle the .icns into App.app/Contents/Resources/ on macOS. The
+# MACOSX_BUNDLE_ICON_FILE property above tells Info.plist's
+# CFBundleIconFile to look for it there. Adding the file to
+# target_sources is what triggers the copy.
+if(APPLE)
+    set(_icon_icns "${CMAKE_SOURCE_DIR}/assets/icon.icns")
+    set_source_files_properties("${_icon_icns}" PROPERTIES
+        MACOSX_PACKAGE_LOCATION "Resources")
+    target_sources(stackcalc PRIVATE "${_icon_icns}")
+endif()
 
 # Install rules for CPack packaging. On Windows the .exe lands at the
 # root of the ZIP; on macOS the .app bundle lands at the root of the DMG.
@@ -51,11 +63,15 @@ if(WIN32)
         @ONLY
     )
     target_sources(stackcalc PRIVATE stackcalc.rc)
-    # The .rc references stackcalc.manifest by name; tell the RC
-    # compiler to look in the build dir (where configure_file landed
-    # the generated copy), and re-link the .rc.obj when it changes.
+    # The .rc references stackcalc.manifest (in the build dir, from
+    # configure_file above) and icon.ico (in the source assets dir).
+    # Both directories go on the RC compiler's include path; both
+    # files go in OBJECT_DEPENDS so the .rc.obj rebuilds when
+    # either changes.
     set_source_files_properties(stackcalc.rc PROPERTIES
-        INCLUDE_DIRECTORIES "${CMAKE_CURRENT_BINARY_DIR}"
-        OBJECT_DEPENDS      "${CMAKE_CURRENT_BINARY_DIR}/stackcalc.manifest"
+        INCLUDE_DIRECTORIES
+            "${CMAKE_CURRENT_BINARY_DIR};${CMAKE_SOURCE_DIR}/assets"
+        OBJECT_DEPENDS
+            "${CMAKE_CURRENT_BINARY_DIR}/stackcalc.manifest;${CMAKE_SOURCE_DIR}/assets/icon.ico"
     )
 endif()

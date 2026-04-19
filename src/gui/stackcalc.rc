@@ -8,3 +8,9 @@
 // Windows bitmap-scales the window on high-DPI displays and text
 // renders blurry.
 1 24 "stackcalc.manifest"
+
+// Application icon. Named (not numeric) so wxICON(APPICON) in
+// gui_app.cpp can reach it for SetIcon on the frame. The first
+// non-default ICON resource is also what Explorer / the taskbar
+// pick up for the EXE.
+APPICON ICON "icon.ico"

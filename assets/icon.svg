@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Application icon for stackcalc.
+  Three horizontal bars (≡) on the same dark background as the calc
+  panel, in the cyan that the mode line uses (102, 204, 255). Reads
+  as "stack" at any size, evokes the project's terminal-dark look.
+
+  Source of truth — pre-rendered icon.ico and icon.icns are built
+  from this by tools/build-icons.sh.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- Rounded background, matches the calc panel's kBgColor. The
+       18% corner radius is what macOS uses for app icons; Windows
+       ignores it and just sees the full square. -->
+  <rect x="0" y="0" width="1024" height="1024" rx="184" ry="184"
+        fill="#1A1A1A"/>
+  <!-- Three stacked bars in kModeColor cyan. -->
+  <g fill="#66CCFF">
+    <rect x="256" y="332" width="512" height="80" rx="12" ry="12"/>
+    <rect x="256" y="472" width="512" height="80" rx="12" ry="12"/>
+    <rect x="256" y="612" width="512" height="80" rx="12" ry="12"/>
+  </g>
+</svg>

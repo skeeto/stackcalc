@@ -144,6 +144,16 @@ StackCalcFrame::StackCalcFrame()
     SetClientSize(FromDIP(wxSize(960, 640)));
     Centre();
 
+    // Window icon. On Windows this picks the per-window title-bar /
+    // taskbar / Alt-Tab icon out of the EXE's APPICON resource (see
+    // stackcalc.rc). On macOS/Linux wxICON's resource path doesn't
+    // apply — macOS reads CFBundleIconFile from Info.plist for the
+    // Dock/Cmd+Tab/Finder icon, and there's no per-window icon
+    // concept in the Cocoa frame.
+#ifdef __WXMSW__
+    SetIcon(wxICON(APPICON));
+#endif
+
     // Splitter hosts the calculator on the left and the trail on the right.
     splitter_ = new wxSplitterWindow(
         this, wxID_ANY, wxDefaultPosition, wxDefaultSize,
