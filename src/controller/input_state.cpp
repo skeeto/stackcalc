@@ -4,10 +4,14 @@
 
 namespace sc {
 
-bool InputState::feed(char ch, const CalcState& state) {
-    int radix = state.display_radix;
+bool InputState::feed(char ch, const CalcState& /*state*/) {
+    // Number entry is ALWAYS decimal regardless of the display radix —
+    // typing "10" always means ten, even when display_radix == 16. To
+    // enter a non-decimal literal, use the explicit "R#NNN" form (e.g.
+    // "16#FF"). This way command keys that double as hex digits ('d',
+    // 'f', 'A', 'B', etc.) keep working in hex display mode.
 
-    // If we have a radix prefix (e.g. "16#"), accept digits in that radix
+    // If we have a radix prefix (e.g. "16#"), accept digits in that radix.
     auto hash_pos = text_.find('#');
     if (active_ && hash_pos != std::string::npos) {
         int custom_radix = std::stoi(text_.substr(0, hash_pos));
@@ -25,23 +29,14 @@ bool InputState::feed(char ch, const CalcState& state) {
         }
     }
 
-    // Digits for the current radix
-    bool is_digit = false;
-    if (radix <= 10) {
-        is_digit = (ch >= '0' && ch < '0' + radix);
-    } else {
-        is_digit = (ch >= '0' && ch <= '9') ||
-                   (ch >= 'a' && ch < 'a' + (radix - 10)) ||
-                   (ch >= 'A' && ch < 'A' + (radix - 10));
-    }
-
-    if (is_digit) {
+    // Plain decimal digits.
+    if (ch >= '0' && ch <= '9') {
         active_ = true;
         text_ += ch;
         return true;
     }
 
-    if (ch == '.' && radix == 10) {
+    if (ch == '.') {
         if (!active_) {
             active_ = true;
             text_ = "0.";
@@ -51,7 +46,7 @@ bool InputState::feed(char ch, const CalcState& state) {
         return true;
     }
 
-    if ((ch == 'e' || ch == 'E') && radix == 10 && active_) {
+    if ((ch == 'e' || ch == 'E') && active_) {
         // Start exponent
         if (text_.find('e') == std::string::npos && text_.find('E') == std::string::npos) {
             text_ += 'e';
@@ -63,7 +58,7 @@ bool InputState::feed(char ch, const CalcState& state) {
     // mid-number-entry, can't be the binary subtract/add operator), so let
     // them join the entry. This makes typing "1e-3" Just Work; without it,
     // the '-' would dispatch as subtract and finalize an incomplete "1e".
-    if ((ch == '-' || ch == '+') && radix == 10 && active_ &&
+    if ((ch == '-' || ch == '+') && active_ &&
         !text_.empty() && (text_.back() == 'e' || text_.back() == 'E')) {
         text_ += ch;
         return true;
@@ -80,7 +75,7 @@ bool InputState::feed(char ch, const CalcState& state) {
         return true;
     }
 
-    if (ch == ':' && radix == 10 && active_) {
+    if (ch == ':' && active_) {
         // Fraction separator
         if (text_.find(':') == std::string::npos && text_.find('.') == std::string::npos) {
             text_ += ':';
@@ -88,19 +83,19 @@ bool InputState::feed(char ch, const CalcState& state) {
         }
     }
 
-    if (ch == '@' && radix == 10 && active_) {
+    if (ch == '@' && active_) {
         // HMS degree separator
         text_ += '@';
         return true;
     }
 
-    if (ch == '\'' && radix == 10 && active_) {
+    if (ch == '\'' && active_) {
         // HMS minute separator
         text_ += '\'';
         return true;
     }
 
-    if (ch == '"' && radix == 10 && active_) {
+    if (ch == '"' && active_) {
         // HMS second separator
         text_ += '"';
         return true;
@@ -218,9 +213,9 @@ ValuePtr InputState::parse(const CalcState& state) const {
         }
     }
 
-    // Integer in current radix
+    // Plain integer (always decimal — see the comment in feed()).
     mpz_class v;
-    v.set_str(text_, state.display_radix);
+    v.set_str(text_, 10);
     return Value::make_integer(std::move(v));
 }
 

@@ -286,6 +286,19 @@ TEST(ControllerTest, RadixSwitchPreservesUserCustomGrouping) {
     EXPECT_EQ(ctrl.stack().state().group_digits, 5);
 }
 
+// User-reported flow: while in radix 16, "10 d r" should set radix to 10.
+// (The "10" is decimal because input is always base 10; the 'd' isn't
+// consumed as a hex digit even though display radix is hex.)
+TEST(ControllerTest, ChangeBackToRadix10FromHexViaDR) {
+    Controller ctrl;
+    feed_chars(ctrl, "16"); feed_special(ctrl, "RET");
+    feed_chars(ctrl, "dr");                                  // -> radix 16
+    EXPECT_EQ(ctrl.stack().state().display_radix, 16);
+    feed_chars(ctrl, "10");                                  // input "10" (decimal)
+    feed_chars(ctrl, "dr");                                  // -> radix 10
+    EXPECT_EQ(ctrl.stack().state().display_radix, 10);
+}
+
 // User-reported: 16 d r used to fail with "Unknown command: radix_n".
 TEST(ControllerTest, ArbitraryRadixFromStack) {
     Controller ctrl;

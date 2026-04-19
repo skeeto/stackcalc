@@ -130,16 +130,30 @@ TEST(InputStateTest, Fraction) {
     EXPECT_EQ(v->as_fraction().den, 3);
 }
 
-TEST(InputStateTest, HexInput) {
+TEST(InputStateTest, BareHexLettersInHexDisplayDoNotEnterAsDigits) {
+    // Number entry is always decimal regardless of display_radix. To enter
+    // a hex literal the user must use the radix-prefix form (see
+    // RadixPrefix below). Bare 'F' here is not a digit and not consumed.
     InputState is;
     CalcState state;
     state.display_radix = 16;
-    is.feed('F', state);
-    is.feed('F', state);
+    EXPECT_FALSE(is.feed('F', state));
+    EXPECT_FALSE(is.active());
+    EXPECT_TRUE(is.text().empty());
+}
+
+TEST(InputStateTest, DecimalInputInHexDisplayMode) {
+    // "10" in hex display mode still parses as decimal ten — display radix
+    // does not affect input.
+    InputState is;
+    CalcState state;
+    state.display_radix = 16;
+    EXPECT_TRUE(is.feed('1', state));
+    EXPECT_TRUE(is.feed('0', state));
     auto v = is.finalize(state);
     ASSERT_TRUE(v);
     EXPECT_TRUE(v->is_integer());
-    EXPECT_EQ(v->as_integer().v, 255);
+    EXPECT_EQ(v->as_integer().v, 10);
 }
 
 TEST(InputStateTest, Cancel) {
