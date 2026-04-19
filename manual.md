@@ -18,9 +18,24 @@ After building, the executable lands at:
 | macOS | `build/bin/stackcalc.app` (also runnable via `open`) |
 | Linux/Windows | `build/bin/stackcalc` |
 
-The window opens at 480 × 640 logical pixels. It is fully
-keyboard-driven; the mouse is only used to resize the window or
-interact with the optional Trail window.
+The window opens at 960 × 640 logical pixels, split 50/50 between the
+stack (left) and the trail (right). Everything is keyboard-driven; the
+mouse is only used to resize the window or drag the splitter sash
+between the two panes.
+
+Stackcalc automatically persists its session (stack, variables, trail,
+precision, word size, display settings, window size, splitter position)
+when you quit, and restores it on next launch. The state file lives in
+the platform-appropriate user data directory:
+
+| Platform | Path |
+|---|---|
+| macOS | `~/Library/Application Support/stackcalc/state.scl` |
+| Windows | `%APPDATA%\stackcalc\state.scl` |
+| Linux | `$XDG_DATA_HOME/stackcalc/state.scl` (default `~/.local/share/stackcalc/state.scl`) |
+
+To start fresh, use **File → Reset Calculator** (`Ctrl+R`), which wipes
+the stack, variables, trail, and all modes back to defaults.
 
 ---
 
@@ -50,8 +65,8 @@ interact with the optional Trail window.
 | Pending prefix | yellow | `[d-]`, `[m-]`, `store ?`, etc. — what stackcalc is waiting for. |
 | Message | red | Last error or status message. Cleared by the next keystroke. |
 
-The `View → Show Trail` menu (or `F2`) opens a separate window that
-logs every operation. See section 17.
+The trail occupies the right pane of the main window and logs every
+operation as it happens. See section 16.
 
 ---
 
@@ -66,16 +81,19 @@ next operator.
 | `0–9` | decimal digits | `42` |
 | `.` | decimal point | `3.14` |
 | `_` | negative sign (because `-` is a binary operator) | `_42` → `−42` |
-| `e` / `E` | exponent (radix 10 only) | `2.5e-3` |
+| `e` / `E` | exponent; followed by optional `-` or `+` sign | `2.5e-3`, `1e+6` |
 | `a:b` | fraction `a/b` | `1:3` → `1/3` |
 | `h@m'sec"` | hours-minutes-seconds | `2@30'15"` |
 | `R#NNN` | integer in custom radix `R` (2–36) | `16#FF` → `255` |
 | `\b` | backspace — delete last char of entry | |
 
-When the display radix is > 10, hex letters extend an active number
-entry but **don't start one**: `d`, `f`, `F`, `A`, `B`, `C`, `E` are
-still bound to commands. To enter a hex literal that begins with a
-letter, use the radix prefix: `16#FF`.
+Number entry is **always decimal**, regardless of the display radix.
+Typing `10` always means ten, even when the display is in hex. To
+enter a value in another base, use the explicit `R#NNN` form (e.g.
+`16#FF` for 255). This way command keys that double as hex digits
+(`d`, `f`, `A`, `B`, `C`, `E`, etc.) keep working in any display
+mode. Within a `R#` prefix entry, the appropriate digits of that
+radix extend the entry.
 
 ---
 
@@ -132,7 +150,7 @@ returns to the stack.
 `I Q` (inverse + sqrt) means **square** (multiplies the top by itself).
 
 Compound types (RectComplex, ErrorForm, Interval, ModuloForm,
-Vector, HMS) auto-promote when mixed with reals; see section 18.
+Vector, HMS) auto-promote when mixed with reals; see section 17.
 
 ---
 
@@ -316,7 +334,7 @@ Tip: pair with `d 6` to see the result in hex (`16#…`).
 
 | Sequence | Toggle |
 |---|---|
-| `d g` | digit grouping (thousands separators) |
+| `d g` | toggle digit grouping (groups of 3 for decimal/binary/octal, 4 for hex; auto-switches when you change radix) |
 | `d z` | leading zeros (pad to word size in non-decimal radix) |
 | `d c` | complex as `(a, b)` pair (default) |
 | `d i` | complex as `a + bi` |
@@ -394,11 +412,11 @@ Default precision is 12 decimal digits, default word size is 32 bits.
 
 ---
 
-## 16. Trail window — `F2`
+## 16. Trail
 
-`F2` (or **View → Show Trail**) opens a separate native window that
-logs every operation as it happens. Each line shows a short tag and
-the resulting value:
+The trail occupies the right pane of the main window and logs every
+operation as it happens. Each line shows a short tag and the resulting
+value:
 
 ```
 ent: 2
@@ -409,8 +427,27 @@ add: 5
 Plain number entries have no tag (just the value). Operations get
 short tags like `add`, `sub`, `mul`, `sin`, `cos`, `lsh`, `rsh`,
 `xor`, `det`, `cross`, `pi`, `gam`, `rcl-X`, `rcl-q3`, `sto-Y`,
-`xch-Z`. The trail window auto-scrolls; closing it just hides
-(state is preserved).
+`xch-Z`. Drag the splitter sash to resize the panes.
+
+### Trail navigation — `t` prefix
+
+The trail has a yellow-highlighted **pointer** (`>`) you can move
+around to pick an entry. These commands share the `t` prefix with
+quick-store (`t0`–`t9`); which one fires depends on the next key —
+digits go to quick-store, letters/brackets go to the trail.
+
+| Sequence | Command |
+|---|---|
+| `t y` | yank — push the value at the pointer onto the stack |
+| `t [` | move pointer to the first entry |
+| `t ]` | move pointer to the last entry |
+| `t n` | next entry (pointer down) |
+| `t p` | previous entry (pointer up) |
+| `t h` | move pointer to the last entry (alias for `t ]`) |
+| `t k` | kill (delete) the entry at the pointer |
+
+Only `t y` and `t k` affect the stack or trail state (and are
+undoable); the other navigation commands just move the pointer.
 
 ---
 
@@ -423,7 +460,7 @@ constructed by the operations that produce them.
 |---|---|---|
 | Integer | `42` | yes (digits) |
 | Fraction | `1:3` | yes (`1:3`) |
-| DecimalFloat | `3.14159265359` | yes (`3.14`, `2.5e-3`) |
+| DecimalFloat | `3.14159265359` (or `16#3.243F6A8885` in hex display) | yes (`3.14`, `2.5e-3`) |
 | RectComplex | `(3, 4)` or `3+4i` (display mode) | only via operations producing complex (e.g. `Q` of a negative) |
 | PolarComplex | — | not currently constructible from keyboard |
 | HMS | `2@ 30' 15"` | yes (`2@30'15"`) |
@@ -493,7 +530,7 @@ These are honest gaps, not bugs:
 | `D` | redo (also `Ctrl+Y`) |
 | `p` | set precision from stack |
 | `Esc` | cancel input |
-| `F2` | toggle trail window |
+| `Ctrl+R` | reset calculator (File → Reset Calculator) |
 
 ### Prefix sequences
 
@@ -502,7 +539,8 @@ These are honest gaps, not bugs:
 | `d` | display modes (format, radix, grouping, complex notation) |
 | `m` | calc modes (angular, fraction, symbolic, infinite) |
 | `s` | named variables (then a single letter for the name) |
-| `t N` / `r N` | quick registers q0–q9 |
+| `t N` / `r N` | quick registers q0–q9 (`N` is a digit) |
+| `t` (+ letter/bracket) | trail navigation (`t y`, `t [`, `t ]`, `t n`, `t p`, `t h`, `t k`) |
 | `b` | bitwise |
 | `f` | extra scientific (atan2, expm1, lnp1, ilog, gamma) |
 | `k` | number theory and combinatorics |
@@ -560,6 +598,14 @@ These are honest gaps, not bugs:
 | `V +` sum | `V *` product | `V X` max | `V N` min |
 |---|---|---|---|
 | `V O` dot | `V D` determinant | `V T` trace | `V C` cross |
+
+### All `t` (trail) sequences
+
+| `t y` yank | `t [` first | `t ]` last | `t n` next |
+|---|---|---|---|
+| `t p` prev | `t h` here | `t k` kill | |
+
+(Digits `t 0`…`t 9` are quick-store, not trail commands.)
 
 ---
 
