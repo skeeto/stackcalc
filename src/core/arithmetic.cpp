@@ -197,6 +197,8 @@ ValuePtr div(const ValuePtr& a, const ValuePtr& b, int precision, FractionMode f
 
     if (a->is_interval() && b->is_interval()) return interval::div(a->as_interval(), b->as_interval(), precision);
 
+    if (a->is_mod() && b->is_mod()) return modulo_form::div(a->as_mod(), b->as_mod(), precision);
+
     // HMS / scalar
     if (a->is_hms() && b->is_real()) return hms::div_scalar(a->as_hms(), b, precision);
 

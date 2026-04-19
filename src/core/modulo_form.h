@@ -8,6 +8,7 @@ namespace modulo_form {
 ValuePtr add(const ModuloForm& a, const ModuloForm& b, int precision);
 ValuePtr sub(const ModuloForm& a, const ModuloForm& b, int precision);
 ValuePtr mul(const ModuloForm& a, const ModuloForm& b, int precision);
+ValuePtr div(const ModuloForm& a, const ModuloForm& b, int precision);
 ValuePtr neg(const ModuloForm& a, int precision);
 ValuePtr pow(const ModuloForm& a, const ValuePtr& exp, int precision);
 
