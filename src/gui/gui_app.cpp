@@ -943,6 +943,16 @@ void TrailPanel::refresh_from_state() {
 // === StackCalcApp =============================================================
 
 bool StackCalcApp::OnInit() {
+    // Treat narrow string literals as UTF-8 when constructing wxStrings.
+    // wx's default (wxConvLibc) uses the platform's "ANSI" code page on
+    // Windows — typically Windows-1252 — and silently mangles UTF-8
+    // multibyte sequences (e.g. an em-dash becomes three garbage chars).
+    // Our sources are UTF-8 (and we pass /utf-8 to MSVC), so tell wx to
+    // interpret narrow input as UTF-8 too. This is a no-op on macOS/
+    // Linux where wxConvLibc already happens to be UTF-8 in modern
+    // locales, but it removes the platform dependency entirely.
+    wxConvCurrent = &wxConvUTF8;
+
     // Drives wxStandardPaths::GetUserDataDir() to a "stackcalc" subdir.
     SetAppName("stackcalc");
     auto* frame = new StackCalcFrame();

@@ -34,6 +34,16 @@ if(STACKCALC_BUILD_GUI)
     include(cmake/FetchWxWidgets.cmake)
 endif()
 
+# Force UTF-8 source AND execution charsets on MSVC. By default MSVC
+# picks the source charset based on the system locale, which on most
+# Windows machines is NOT UTF-8 — so our em-dashes and other non-ASCII
+# literals get reinterpreted at compile time and emerge as mojibake at
+# run time. Apply only to our own targets (placed AFTER FetchWxWidgets
+# so wx's bundled C/C++ deps build with their own settings).
+if(MSVC)
+    add_compile_options(/utf-8)
+endif()
+
 add_subdirectory(src)
 
 enable_testing()
