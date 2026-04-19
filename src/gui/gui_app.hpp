@@ -94,6 +94,10 @@ public:
 private:
     void on_blink_tick(wxTimerEvent& e);
     void update_stack();
+    // Drop any active text selection on the stack/trail rich-text
+    // widgets. Called after every consumed calculator keystroke so a
+    // stray selection doesn't linger as the user keeps typing.
+    void clear_selections();
 
     sc::Controller    ctrl_;
     wxFont            mono_font_;

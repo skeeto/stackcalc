@@ -1,8 +1,10 @@
 #include "gui_app.hpp"
 #include "persistence.hpp"
+#include <wx/caret.h>
 #include <wx/dcbuffer.h>
 #include <wx/file.h>
 #include <wx/filename.h>
+#include <wx/fontenum.h>
 #include <wx/stdpaths.h>
 #include <cstdio>
 #include <sstream>
@@ -179,7 +181,13 @@ void StackCalcFrame::build_menus() {
     auto* file = new wxMenu();
     file->Append(ID_Reset, "&Reset Calculator\tCtrl+R");
     file->AppendSeparator();
+    // Use the platform's idiomatic close shortcut. wx maps Ctrl+Q to
+     // Cmd+Q automatically on macOS; on Windows the standard is Alt+F4.
+#ifdef __WXMSW__
+    file->Append(wxID_EXIT, "&Quit\tAlt+F4");
+#else
     file->Append(wxID_EXIT, "&Quit\tCtrl+Q");
+#endif
     mb->Append(file, "&File");
 
     // ---- Edit ----
@@ -528,8 +536,17 @@ CalcPanel::CalcPanel(wxWindow* parent)
 {
     SetBackgroundColour(kBgColor);
 
-    // Monospace font, used by both subwidgets.
-    mono_font_ = wxFont(wxFontInfo(13).FaceName("Menlo"));
+    // Monospace font, used by both subwidgets. Try platform-appropriate
+    // face names in order; wxFont silently substitutes when a face is
+    // missing (still IsOk(), just wrong-looking), so verify against the
+    // system font list before committing. Falls back to the TELETYPE
+    // family if nothing on the list is installed.
+    for (const wxString& face :
+         { "Menlo", "Consolas", "DejaVu Sans Mono", "Courier New" }) {
+        if (!wxFontEnumerator::IsValidFacename(face)) continue;
+        wxFont f(wxFontInfo(13).FaceName(face));
+        if (f.IsOk()) { mono_font_ = f; break; }
+    }
     if (!mono_font_.IsOk()) {
         mono_font_ = wxFont(13, wxFONTFAMILY_TELETYPE,
                             wxFONTSTYLE_NORMAL, wxFONTWEIGHT_NORMAL);
@@ -547,6 +564,15 @@ CalcPanel::CalcPanel(wxWindow* parent)
     stack_ctrl_->SetBackgroundColour(kBgColor);
     stack_ctrl_->SetForegroundColour(kValueColor);
     stack_ctrl_->SetEditable(false);
+    // Hide the text-insertion caret. It's read-only — the caret only
+    // adds visual noise (and on macOS draws in a near-invisible dark
+    // color over our dark background). Selection highlight is separate
+    // and still works.
+    {
+        auto* hidden = new wxCaret(stack_ctrl_, wxSize(0, 0));
+        stack_ctrl_->SetCaret(hidden);
+        hidden->Hide();
+    }
 
     // Bottom: custom-painted mode line.
     mode_bar_ = new ModeBar(this, this);
@@ -769,6 +795,7 @@ void CalcPanel::on_char(wxKeyEvent& e) {
         } catch (...) {
             // Controller swallows its own errors via message_; defensive
         }
+        clear_selections();
         redraw();
     }
     // Don't Skip — consumed
@@ -833,11 +860,17 @@ void CalcPanel::on_key_down(wxKeyEvent& e) {
     }
 
     if (handled) {
+        clear_selections();
         redraw();
         // Don't Skip — we consumed it. EVT_CHAR won't fire.
     } else {
         e.Skip();  // let EVT_CHAR translate this key
     }
+}
+
+void CalcPanel::clear_selections() {
+    if (stack_ctrl_)  stack_ctrl_->SelectNone();
+    if (trail_panel_) trail_panel_->SelectNone();
 }
 
 // === TrailPanel: right-pane trail viewer =====================================
@@ -852,6 +885,11 @@ TrailPanel::TrailPanel(wxWindow* parent, CalcPanel* host)
     SetBackgroundColour(kBgColor);
     SetForegroundColour(kValueColor);
     SetEditable(false);
+    {
+        auto* hidden = new wxCaret(this, wxSize(0, 0));
+        SetCaret(hidden);
+        hidden->Hide();
+    }
 
     // Forward keystrokes to the calculator so typing still works while
     // the trail widget has focus from a click-to-select. Same pattern as
