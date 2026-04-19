@@ -28,7 +28,7 @@ set_target_properties(stackcalc PROPERTIES
     MACOSX_BUNDLE_BUNDLE_NAME            "stackcalc"
     MACOSX_BUNDLE_BUNDLE_VERSION         "${PROJECT_VERSION}"
     MACOSX_BUNDLE_SHORT_VERSION_STRING   "${PROJECT_VERSION}"
-    MACOSX_BUNDLE_GUI_IDENTIFIER         "stackcalc"
+    MACOSX_BUNDLE_GUI_IDENTIFIER         "com.nullprogram.stackcalc"
     MACOSX_BUNDLE_INFO_STRING            "stackcalc ${PROJECT_VERSION}"
 )
 
