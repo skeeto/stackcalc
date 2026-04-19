@@ -772,6 +772,16 @@ void CalcPanel::update_stack() {
         // Top-of-stack rendered at the TOP of the widget, growing downward.
         const auto& entries = cached_display_.stack_entries;
         int n = static_cast<int>(entries.size());
+
+        // wxRichTextCtrl::WriteText is roughly linear-with-bad-constant
+        // in input length; pumping ~500 000 characters into it freezes
+        // the UI for many seconds and (since it's running on the UI
+        // thread) drops Ctrl+G on the floor. Cap the per-entry render
+        // length — anything past this is unreadable anyway. The full
+        // value is still on the stack and accessible to operators;
+        // this is purely a render-side guard.
+        constexpr size_t kMaxEntryRender = 8192;
+
         for (int j = 0; j < n; ++j) {
             int idx = n - 1 - j;        // entry index in stack_entries
             int label = j + 1;          // 1 = top of stack
@@ -780,9 +790,17 @@ void CalcPanel::update_stack() {
             stack_ctrl_->WriteText(wxString::Format("%3d:  ", label));
             stack_ctrl_->EndTextColour();
 
-            stack_ctrl_->BeginTextColour(kValueColor);
-            stack_ctrl_->WriteText(wxString::FromUTF8(entries[idx].c_str()));
-            stack_ctrl_->EndTextColour();
+            const std::string& s = entries[idx];
+            if (s.size() > kMaxEntryRender) {
+                stack_ctrl_->BeginTextColour(kFlagColor);
+                stack_ctrl_->WriteText(wxString::Format(
+                    "<value too large to display: %zu chars>", s.size()));
+                stack_ctrl_->EndTextColour();
+            } else {
+                stack_ctrl_->BeginTextColour(kValueColor);
+                stack_ctrl_->WriteText(wxString::FromUTF8(s.c_str()));
+                stack_ctrl_->EndTextColour();
+            }
 
             if (j + 1 < n) stack_ctrl_->Newline();
         }
