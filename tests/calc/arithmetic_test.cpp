@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include "operations.h"
+#include <cmath>
 
 using namespace sc;
 
@@ -172,6 +173,56 @@ TEST_F(ArithmeticTest, PowFraction) {
     ASSERT_TRUE(s.top()->is_fraction());
     EXPECT_EQ(s.top()->as_fraction().num, 8);
     EXPECT_EQ(s.top()->as_fraction().den, 27);
+}
+
+// Helper: convert top-of-stack DecimalFloat to a double for comparison
+static double float_to_double(const ValuePtr& v) {
+    auto& f = v->as_float();
+    return f.mantissa.get_d() * std::pow(10.0, f.exponent);
+}
+
+TEST_F(ArithmeticTest, PowIntBaseFloatExp) {
+    push_int(2);
+    push_float(5, -1);            // 0.5
+    ops::power(s);
+    ASSERT_TRUE(s.top()->is_float());
+    EXPECT_NEAR(float_to_double(s.top()), std::sqrt(2.0), 1e-10);
+}
+
+TEST_F(ArithmeticTest, PowIntBaseFractionExp) {
+    push_int(2);
+    push_frac(1, 2);              // 1/2
+    ops::power(s);
+    ASSERT_TRUE(s.top()->is_float());
+    EXPECT_NEAR(float_to_double(s.top()), std::sqrt(2.0), 1e-10);
+}
+
+TEST_F(ArithmeticTest, PowFloatBaseFloatExp) {
+    push_float(25, -1);           // 2.5
+    push_float(37, -1);           // 3.7
+    ops::power(s);
+    ASSERT_TRUE(s.top()->is_float());
+    EXPECT_NEAR(float_to_double(s.top()), std::pow(2.5, 3.7), 1e-9);
+}
+
+TEST_F(ArithmeticTest, PowIntegerExpFromFloatStaysExact) {
+    // 2 ^ 3.0 — the float exponent represents an exact integer (3), so we
+    // use the integer fast path and the result stays an exact integer 8
+    // rather than an MPFR-rounded float.
+    push_int(2);
+    push_float(3, 0);             // 3.0
+    ops::power(s);
+    ASSERT_TRUE(s.top()->is_integer());
+    EXPECT_EQ(s.top()->as_integer().v, 8);
+}
+
+TEST_F(ArithmeticTest, PowNegativeBaseNonIntegerExpIsNaN) {
+    // (-2) ^ 0.5 is complex; without complex support we expect NaN.
+    push_int(-2);
+    push_float(5, -1);
+    ops::power(s);
+    ASSERT_TRUE(s.top()->is_infinity());
+    EXPECT_EQ(s.top()->as_infinity().kind, Infinity::NaN);
 }
 
 // --- Unary ---

@@ -10,6 +10,8 @@
 #include "interval.h"
 #include "infinity.h"
 #include "vector.h"
+#include "mpfr_bridge.h"
+#include <mpfr.h>
 
 namespace sc::arith {
 
@@ -227,6 +229,9 @@ ValuePtr power(const ValuePtr& a, const ValuePtr& b, int precision) {
     if (a->is_mod()) return modulo_form::pow(a->as_mod(), b, precision);
 
     // Coerce a float exponent to an integer if it represents one exactly.
+    // Otherwise (true non-integer real exponent), fall back to MPFR's mpfr_pow,
+    // which handles fraction/float exponents and signals NaN for things like
+    // negative-base ^ non-integer (which would be complex).
     const mpz_class* exp_mpz = nullptr;
     mpz_class exp_storage;
     if (b->is_integer()) {
@@ -238,7 +243,10 @@ ValuePtr power(const ValuePtr& a, const ValuePtr& b, int precision) {
         }
     }
     if (!exp_mpz) {
-        throw std::invalid_argument("non-integer exponent not yet supported");
+        // Non-integer real exponent. Requires both base and exponent to be
+        // convertible to a real number (mpfr_bridge::to_mpfr will throw for
+        // complex/HMS/etc. via coerce::to_float).
+        return mpfr_bridge::compute_binary(a, b, precision, mpfr_pow);
     }
 
     // Special cases that have well-defined results regardless of exponent
