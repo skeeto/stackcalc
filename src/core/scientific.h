@@ -37,6 +37,13 @@ ValuePtr double_factorial(const ValuePtr& a);
 ValuePtr choose(const ValuePtr& n, const ValuePtr& m, int precision);
 ValuePtr permutation(const ValuePtr& n, const ValuePtr& m, int precision);
 
+// --- Integer logarithm ---
+// floor(log_base(a)). Returns -inf for a == 0; throws for negative a.
+ValuePtr ilog(const ValuePtr& a, const ValuePtr& base);
+
+// --- Gamma function ---
+ValuePtr gamma_fn(const ValuePtr& a, int precision);
+
 // --- Number theory ---
 ValuePtr gcd(const ValuePtr& a, const ValuePtr& b);
 ValuePtr lcm(const ValuePtr& a, const ValuePtr& b);

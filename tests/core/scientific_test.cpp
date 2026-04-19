@@ -246,3 +246,40 @@ TEST(ScientificTest, Hypot3_4) {
     auto r = scientific::hypot(Value::make_integer(3), Value::make_integer(4), 12);
     expect_near(r, 5.0, 1e-10);
 }
+
+// --- Integer log ---
+TEST(ScientificTest, IlogBase10) {
+    EXPECT_EQ(scientific::ilog(Value::make_integer(1000),
+                               Value::make_integer(10))->as_integer().v, 3);
+    EXPECT_EQ(scientific::ilog(Value::make_integer(999),
+                               Value::make_integer(10))->as_integer().v, 2);
+    EXPECT_EQ(scientific::ilog(Value::make_integer(1),
+                               Value::make_integer(10))->as_integer().v, 0);
+}
+
+TEST(ScientificTest, IlogBase2) {
+    EXPECT_EQ(scientific::ilog(Value::make_integer(1024),
+                               Value::make_integer(2))->as_integer().v, 10);
+    EXPECT_EQ(scientific::ilog(Value::make_integer(1023),
+                               Value::make_integer(2))->as_integer().v, 9);
+}
+
+TEST(ScientificTest, IlogRejectsBadInputs) {
+    EXPECT_THROW(scientific::ilog(Value::make_integer(0),
+                                  Value::make_integer(10)), std::domain_error);
+    EXPECT_THROW(scientific::ilog(Value::make_integer(10),
+                                  Value::make_integer(1)), std::domain_error);
+}
+
+// --- Gamma function ---
+TEST(ScientificTest, GammaIntegerEqualsFactorial) {
+    // gamma(5) = 4! = 24
+    auto r = scientific::gamma_fn(Value::make_integer(5), 20);
+    expect_near(r, 24.0, 1e-10);
+}
+
+TEST(ScientificTest, GammaHalfEqualsSqrtPi) {
+    // gamma(1/2) = sqrt(pi) ≈ 1.77245385091
+    auto r = scientific::gamma_fn(Value::make_float(5, -1), 20);
+    expect_near(r, std::sqrt(M_PI), 1e-10);
+}

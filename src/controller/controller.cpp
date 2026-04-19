@@ -359,6 +359,22 @@ void Controller::execute(const std::string& command) {
         stack_.end_command("lnp1", {r});
         return;
     }
+    if (command == "ilog") {
+        stack_.begin_command();
+        auto args = stack_.pop_n(2);
+        auto r = scientific::ilog(args[0], args[1]);   // floor(log_args[1](args[0]))
+        stack_.push(r);
+        stack_.end_command("ilog", {r});
+        return;
+    }
+    if (command == "gamma") {
+        stack_.begin_command();
+        auto a = stack_.pop();
+        auto r = scientific::gamma_fn(a, state.precision);
+        stack_.push(r);
+        stack_.end_command("gam", {r});
+        return;
+    }
 
     // --- Number theory ---
     if (command == "gcd") {

@@ -203,6 +203,29 @@ ValuePtr permutation(const ValuePtr& n, const ValuePtr& m, int precision) {
     return arith::div(n_fact, nm_fact, precision, FractionMode::Float);
 }
 
+// --- Integer logarithm ---
+
+ValuePtr ilog(const ValuePtr& a, const ValuePtr& base) {
+    // Emacs calc semantics: floor(log_base(a)) for positive integers.
+    if (!a->is_integer() || !base->is_integer())
+        throw std::domain_error("ilog requires integer arguments");
+    auto& av = a->as_integer().v;
+    auto& bv = base->as_integer().v;
+    if (av <= 0) throw std::domain_error("ilog of non-positive value");
+    if (bv < 2) throw std::domain_error("ilog base must be >= 2");
+    // Repeated division: count how many times we can divide a by base before
+    // it drops below 1.
+    mpz_class x = av, count = 0;
+    while (x >= bv) { x /= bv; count += 1; }
+    return Value::make_integer(std::move(count));
+}
+
+// --- Gamma function ---
+
+ValuePtr gamma_fn(const ValuePtr& a, int precision) {
+    return mpfr_bridge::compute_unary(a, precision, mpfr_gamma);
+}
+
 // --- Number theory ---
 
 static const mpz_class& require_positive_int(const ValuePtr& v, const char* name) {
