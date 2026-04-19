@@ -114,6 +114,12 @@ void KeyMap::setup_defaults() {
     // --- Precision ---
     bind("p", "precision");
 
+    // --- Quick registers (Emacs t N store, r N recall) ---
+    for (char d = '0'; d <= '9'; ++d) {
+        bind_seq("t", std::string(1, d), std::string("qstore_") + d);
+        bind_seq("r", std::string(1, d), std::string("qrecall_") + d);
+    }
+
     // --- Number theory / combinatorics (k prefix) ---
     bind_seq("k", "c", "choose");
     bind_seq("k", "d", "dfact");

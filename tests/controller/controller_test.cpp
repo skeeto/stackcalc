@@ -326,6 +326,43 @@ TEST(ControllerTest, NonLetterCancelsVariableCommand) {
     EXPECT_TRUE(ctrl.display().pending_prefix.empty());
 }
 
+// --- Quick registers q0-q9 ---
+
+TEST(ControllerTest, QuickStoreAndRecall) {
+    Controller ctrl;
+    feed_chars(ctrl, "42"); feed_special(ctrl, "RET");
+    feed_chars(ctrl, "t3");                 // store top in q3 (peek)
+    EXPECT_EQ(ctrl.display().stack_depth, 1);
+    feed_special(ctrl, "DEL");              // drop the 42
+    feed_chars(ctrl, "r3");                 // recall q3
+    EXPECT_EQ(ctrl.display().stack_entries.back(), "42");
+}
+
+TEST(ControllerTest, QuickRecallEmptyReportsError) {
+    Controller ctrl;
+    feed_chars(ctrl, "r7");
+    auto ds = ctrl.display();
+    EXPECT_FALSE(ds.message.empty());
+    EXPECT_EQ(ds.stack_depth, 0);
+}
+
+TEST(ControllerTest, AllTenQuickRegisters) {
+    Controller ctrl;
+    // Push 10 distinct values, each into a different quick register.
+    for (int i = 0; i < 10; ++i) {
+        feed_chars(ctrl, std::to_string(i * 100));
+        feed_special(ctrl, "RET");
+        feed_chars(ctrl, std::string("t") + char('0' + i));
+        feed_special(ctrl, "DEL");
+    }
+    // Recall in reverse order.
+    for (int i = 9; i >= 0; --i) {
+        feed_chars(ctrl, std::string("r") + char('0' + i));
+        EXPECT_EQ(ctrl.display().stack_entries.back(), std::to_string(i * 100));
+        feed_special(ctrl, "DEL");
+    }
+}
+
 // User-reported: in radix 16, `d g` couldn't reach the grouping command
 // because input_state.feed() was eagerly consuming `d` as a hex digit
 // (starting a new number entry) before the keymap dispatcher saw it.

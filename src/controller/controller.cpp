@@ -128,6 +128,25 @@ void Controller::execute(const std::string& command) {
         return;
     }
 
+    // --- Quick registers (t N to store, r N to recall) ---
+    if (command.size() == 8 && command.compare(0, 7, "qstore_") == 0) {
+        int n = command[7] - '0';
+        if (stack_.size() == 0) { message_ = "Stack underflow"; return; }
+        finalize_entry();
+        vars_.store_quick(n, stack_.top());     // peek (Emacs convention)
+        return;
+    }
+    if (command.size() == 9 && command.compare(0, 8, "qrecall_") == 0) {
+        int n = command[8] - '0';
+        auto v = vars_.recall_quick(n);
+        if (!v) { message_ = std::string("q") + command[8] + " is empty"; return; }
+        finalize_entry();
+        stack_.begin_command();
+        stack_.push(*v);
+        stack_.end_command(std::string("rcl-q") + command[8], {*v});
+        return;
+    }
+
     // --- Variable storage / recall (s s, s r, s t, s x, s u, s + - * /) ---
     // Each just defers: the next keystroke is consumed as the variable name.
     if (command == "store"      || command == "recall"    ||
