@@ -7,6 +7,14 @@
 #include <cctype>
 #include <sstream>
 
+namespace {
+// Hex displays read more naturally with 4-digit groups (matches Emacs calc);
+// other radixes use the conventional 3-digit thousands grouping.
+int default_group_for_radix(int radix) {
+    return radix == 16 ? 4 : 3;
+}
+} // namespace
+
 namespace sc {
 
 Controller::Controller() {}
@@ -547,10 +555,23 @@ void Controller::execute(const std::string& command) {
     if (command == "display_fix")    { state.display_format = DisplayFormat::Fix; return; }
     if (command == "display_sci")    { state.display_format = DisplayFormat::Sci; return; }
     if (command == "display_eng")    { state.display_format = DisplayFormat::Eng; return; }
-    if (command == "radix_2")        { state.display_radix = 2; return; }
-    if (command == "radix_8")        { state.display_radix = 8; return; }
-    if (command == "radix_16")       { state.display_radix = 16; return; }
-    if (command == "radix_10")       { state.display_radix = 10; return; }
+    // Radix changes also swap the digit-grouping default: hex uses 4,
+    // others use 3. Only auto-swap when the user hasn't customized the
+    // group size — i.e. it currently equals the default for the *old*
+    // radix. Any other value (off, or user-picked) is preserved.
+    auto change_radix = [&](int new_r) {
+        int old_default = default_group_for_radix(state.display_radix);
+        int new_default = default_group_for_radix(new_r);
+        if (state.group_digits == old_default && old_default != new_default) {
+            state.group_digits = new_default;
+        }
+        state.display_radix = new_r;
+    };
+
+    if (command == "radix_2")        { change_radix(2);  return; }
+    if (command == "radix_8")        { change_radix(8);  return; }
+    if (command == "radix_16")       { change_radix(16); return; }
+    if (command == "radix_10")       { change_radix(10); return; }
     if (command == "radix_n") {
         // Pop the top value as the new display radix (must be 2..36).
         // Snapshot so undo restores the popped value.
@@ -560,7 +581,7 @@ void Controller::execute(const std::string& command) {
             if (v->is_integer()) {
                 int r = static_cast<int>(v->as_integer().v.get_si());
                 if (r >= 2 && r <= 36) {
-                    state.display_radix = r;
+                    change_radix(r);
                     stack_.end_command("rdx", {});
                 } else {
                     stack_.discard_command();
@@ -574,7 +595,12 @@ void Controller::execute(const std::string& command) {
         return;
     }
     if (command == "leading_zeros")  { state.leading_zeros = !state.leading_zeros; return; }
-    if (command == "grouping")       { state.group_digits = state.group_digits > 0 ? 0 : 3; return; }
+    if (command == "grouping") {
+        // Toggle off / on; "on" uses the radix-appropriate default.
+        int default_grp = default_group_for_radix(state.display_radix);
+        state.group_digits = state.group_digits > 0 ? 0 : default_grp;
+        return;
+    }
     if (command == "complex_pair")   { state.complex_format = ComplexFormat::Pair; return; }
     if (command == "complex_i")      { state.complex_format = ComplexFormat::INotation; return; }
     if (command == "complex_j")      { state.complex_format = ComplexFormat::JNotation; return; }

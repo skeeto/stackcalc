@@ -236,6 +236,56 @@ TEST(ControllerTest, SetPrecision) {
     EXPECT_TRUE(ds.mode_line.find("20") != std::string::npos);
 }
 
+// --- Auto-grouping default per radix (3 for non-hex, 4 for hex) ---
+
+TEST(ControllerTest, GroupingDefaultIsThreeInDecimal) {
+    Controller ctrl;
+    feed_chars(ctrl, "dg");                                  // toggle on
+    EXPECT_EQ(ctrl.stack().state().group_digits, 3);
+}
+
+TEST(ControllerTest, GroupingDefaultBecomesFourInHex) {
+    Controller ctrl;
+    feed_chars(ctrl, "d6");                                  // radix=16, group still 0
+    EXPECT_EQ(ctrl.stack().state().group_digits, 0);
+    feed_chars(ctrl, "dg");                                  // toggle on -> 4
+    EXPECT_EQ(ctrl.stack().state().group_digits, 4);
+}
+
+TEST(ControllerTest, RadixSwitchSwapsGroupingDefault) {
+    Controller ctrl;
+    feed_chars(ctrl, "dg");                                  // dec, on -> 3
+    EXPECT_EQ(ctrl.stack().state().group_digits, 3);
+    feed_chars(ctrl, "d6");                                  // -> hex, group auto -> 4
+    EXPECT_EQ(ctrl.stack().state().group_digits, 4);
+    feed_chars(ctrl, "d0");                                  // -> dec, group auto -> 3
+    EXPECT_EQ(ctrl.stack().state().group_digits, 3);
+    feed_chars(ctrl, "d8");                                  // -> oct, default is 3, no swap
+    EXPECT_EQ(ctrl.stack().state().group_digits, 3);
+    feed_chars(ctrl, "d6");                                  // -> hex, swap to 4
+    EXPECT_EQ(ctrl.stack().state().group_digits, 4);
+}
+
+TEST(ControllerTest, RadixSwitchPreservesOffGrouping) {
+    Controller ctrl;
+    EXPECT_EQ(ctrl.stack().state().group_digits, 0);         // off by default
+    feed_chars(ctrl, "d6");                                  // -> hex
+    EXPECT_EQ(ctrl.stack().state().group_digits, 0);         // still off
+    feed_chars(ctrl, "d0");                                  // -> dec
+    EXPECT_EQ(ctrl.stack().state().group_digits, 0);
+}
+
+TEST(ControllerTest, RadixSwitchPreservesUserCustomGrouping) {
+    Controller ctrl;
+    // Programmatically pick a non-default group size; auto-swap should leave
+    // it alone (encodes "user customized").
+    ctrl.stack().state().group_digits = 5;
+    feed_chars(ctrl, "d6");                                  // -> hex
+    EXPECT_EQ(ctrl.stack().state().group_digits, 5);         // preserved
+    feed_chars(ctrl, "d0");                                  // -> dec
+    EXPECT_EQ(ctrl.stack().state().group_digits, 5);
+}
+
 // User-reported: 16 d r used to fail with "Unknown command: radix_n".
 TEST(ControllerTest, ArbitraryRadixFromStack) {
     Controller ctrl;
