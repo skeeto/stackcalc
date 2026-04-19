@@ -277,6 +277,64 @@ TEST(ControllerTest, FailedBinaryOpRestoresStack) {
     EXPECT_EQ(ds.stack_entries[1], "0");
 }
 
+// User-reported: undo couldn't roll back number-entry pushes because
+// finalize_entry called Stack::push directly without begin/end_command.
+TEST(ControllerTest, UndoUndoesNumberEntry) {
+    Controller ctrl;
+    feed_chars(ctrl, "5");  feed_special(ctrl, "RET");
+    feed_chars(ctrl, "10"); feed_special(ctrl, "RET");
+    feed_chars(ctrl, "15"); feed_special(ctrl, "RET");
+    EXPECT_EQ(ctrl.display().stack_depth, 3);
+    feed_chars(ctrl, "U");          // undo
+    EXPECT_EQ(ctrl.display().stack_depth, 2);
+    EXPECT_EQ(ctrl.display().stack_entries.back(), "10");
+    feed_chars(ctrl, "U");
+    EXPECT_EQ(ctrl.display().stack_depth, 1);
+    EXPECT_EQ(ctrl.display().stack_entries.back(), "5");
+    feed_chars(ctrl, "U");
+    EXPECT_EQ(ctrl.display().stack_depth, 0);
+}
+
+TEST(ControllerTest, RedoAfterUndoOfNumberEntry) {
+    Controller ctrl;
+    feed_chars(ctrl, "42"); feed_special(ctrl, "RET");
+    feed_chars(ctrl, "U");          // undo
+    EXPECT_EQ(ctrl.display().stack_depth, 0);
+    feed_chars(ctrl, "D");          // redo
+    EXPECT_EQ(ctrl.display().stack_depth, 1);
+    EXPECT_EQ(ctrl.display().stack_entries.back(), "42");
+}
+
+TEST(ControllerTest, UndoUndoesPushOfPi) {
+    Controller ctrl;
+    feed_chars(ctrl, "P");          // push pi
+    EXPECT_EQ(ctrl.display().stack_depth, 1);
+    feed_chars(ctrl, "U");          // undo
+    EXPECT_EQ(ctrl.display().stack_depth, 0);
+}
+
+TEST(ControllerTest, UndoUndoesPrecisionPop) {
+    Controller ctrl;
+    feed_chars(ctrl, "20"); feed_special(ctrl, "RET");
+    feed_chars(ctrl, "p");          // sets precision to 20, pops the 20
+    EXPECT_EQ(ctrl.display().stack_depth, 0);
+    feed_chars(ctrl, "U");          // undoes the pop
+    EXPECT_EQ(ctrl.display().stack_depth, 1);
+    EXPECT_EQ(ctrl.display().stack_entries.back(), "20");
+}
+
+TEST(ControllerTest, UndoUndoesLastArgs) {
+    Controller ctrl;
+    feed_chars(ctrl, "2"); feed_special(ctrl, "RET");
+    feed_chars(ctrl, "3"); feed_special(ctrl, "RET");
+    feed_chars(ctrl, "+");                          // stack: [5]
+    feed_special(ctrl, "M-RET");                    // stack: [5, 2, 3]
+    EXPECT_EQ(ctrl.display().stack_depth, 3);
+    feed_chars(ctrl, "U");                          // undo M-RET
+    EXPECT_EQ(ctrl.display().stack_depth, 1);
+    EXPECT_EQ(ctrl.display().stack_entries.back(), "5");
+}
+
 // Special cases: even with huge exponents, base 0/±1 have well-defined results.
 TEST(ControllerTest, PowerSpecialCasesSurviveHugeExponent) {
     Controller ctrl;

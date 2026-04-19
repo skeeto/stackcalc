@@ -61,7 +61,9 @@ bool Controller::process_key(const KeyEvent& key) {
 void Controller::finalize_entry() {
     auto v = input_.finalize(stack_.state());
     if (v) {
-        stack_.push(std::move(v));
+        stack_.begin_command();
+        stack_.push(v);
+        stack_.end_command("", {v});
     }
 }
 
@@ -94,7 +96,12 @@ void Controller::execute(const std::string& command) {
     if (command == "swap") { stack_.swap(); return; }
     if (command == "roll_up") { stack_.roll_up(3); return; }
     if (command == "last_args") {
-        for (auto& v : stack_.last_args()) stack_.push(v);
+        const auto args = stack_.last_args();   // copy: push() may reallocate
+        if (!args.empty()) {
+            stack_.begin_command();
+            for (auto& v : args) stack_.push(v);
+            stack_.end_command("args", args);
+        }
         return;
     }
     if (command == "undo") { stack_.undo(); return; }
@@ -216,11 +223,14 @@ void Controller::execute(const std::string& command) {
     // --- Constants ---
     if (command == "pi") {
         ValuePtr r;
-        if (hyp && inv) r = constants::phi(state.precision);
-        else if (hyp) r = constants::e(state.precision);
-        else if (inv) r = constants::gamma(state.precision);
-        else r = constants::pi(state.precision);
+        const char* tag;
+        if (hyp && inv)   { r = constants::phi(state.precision);   tag = "phi"; }
+        else if (hyp)     { r = constants::e(state.precision);     tag = "e"; }
+        else if (inv)     { r = constants::gamma(state.precision); tag = "gam"; }
+        else              { r = constants::pi(state.precision);    tag = "pi"; }
+        stack_.begin_command();
         stack_.push(r);
+        stack_.end_command(tag, {r});
         return;
     }
 
@@ -382,14 +392,23 @@ void Controller::execute(const std::string& command) {
 
     // --- Precision ---
     if (command == "precision") {
-        // Pop the top value as the new precision
+        // Pop the top value as the new precision. Snapshot so undo restores
+        // the popped value. (The mode change itself isn't reversible by undo
+        // — only the stack effect is.)
         if (stack_.size() > 0) {
+            stack_.begin_command();
             auto v = stack_.pop();
             if (v->is_integer()) {
                 int p = static_cast<int>(v->as_integer().v.get_si());
-                if (p >= 1 && p <= 1000) state.precision = p;
-                else message_ = "Precision must be 1-1000";
+                if (p >= 1 && p <= 1000) {
+                    state.precision = p;
+                    stack_.end_command("prec", {});
+                } else {
+                    stack_.discard_command();
+                    message_ = "Precision must be 1-1000";
+                }
             } else {
+                stack_.discard_command();
                 message_ = "Precision requires an integer";
             }
         }
@@ -490,7 +509,10 @@ DisplayState Controller::display() const {
     // Trail
     for (int i = 0; i < stack_.trail().size(); ++i) {
         auto& entry = stack_.trail().at(i);
-        ds.trail_entries.push_back(entry.tag + ": " + fmt.format(entry.value));
+        // Empty tag (e.g. plain number entry) renders as just the value.
+        ds.trail_entries.push_back(entry.tag.empty()
+            ? fmt.format(entry.value)
+            : entry.tag + ": " + fmt.format(entry.value));
     }
 
     // Message
