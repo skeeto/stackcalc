@@ -1,0 +1,4 @@
+// Pull in wxWidgets' default Windows resources, including the manifest
+// that declares DPI awareness. Without this, Windows bitmap-scales the
+// whole app on high-DPI displays and everything renders blurry.
+#include "wx/msw/wx.rc"

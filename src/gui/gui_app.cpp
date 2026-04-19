@@ -17,8 +17,9 @@ static const wxColour kErrorColor    (255, 77, 77);
 // === StackCalcFrame ===========================================================
 
 StackCalcFrame::StackCalcFrame()
-    : wxFrame(nullptr, wxID_ANY, "stackcalc", wxDefaultPosition, wxSize(480, 640))
+    : wxFrame(nullptr, wxID_ANY, "stackcalc", wxDefaultPosition, wxDefaultSize)
 {
+    SetClientSize(FromDIP(wxSize(480, 640)));
     // Native menu bar
     auto* menu_view = new wxMenu();
     menu_view->AppendCheckItem(ID_ToggleTrail, "Show &Trail\tF2");
@@ -124,9 +125,12 @@ void CalcPanel::on_paint(wxPaintEvent&) {
     dc.SetBackground(wxBrush(kBgColor));
     dc.Clear();
 
-    // Use the font's line height for everything
+    // Use the font's line height for everything. Padding/gaps are in DIPs
+    // so they scale on high-DPI displays.
     int line_h = dc.GetCharHeight();
-    int padding = 4;
+    int padding = FromDIP(4);
+    int sep_gap = FromDIP(3);
+    int stack_gap = FromDIP(8);
 
     int y = padding;
 
@@ -146,7 +150,7 @@ void CalcPanel::on_paint(wxPaintEvent&) {
     {
         // separator above mode line
         dc.SetPen(wxPen(kSeparatorColor));
-        dc.DrawLine(0, mode_y - 3, size.GetWidth(), mode_y - 3);
+        dc.DrawLine(0, mode_y - sep_gap, size.GetWidth(), mode_y - sep_gap);
 
         dc.SetTextForeground(kModeColor);
         dc.DrawText(ds.mode_line, padding, mode_y);
@@ -171,7 +175,7 @@ void CalcPanel::on_paint(wxPaintEvent&) {
     // Render bottom-up: build all the lines we want to draw, then draw from
     // the bottom of the available region upward so the latest entry is always
     // pinned just above the mode line.
-    int stack_bottom = mode_y - 8;
+    int stack_bottom = mode_y - stack_gap;
     int stack_top = y;
 
     struct Line {
@@ -329,9 +333,10 @@ void CalcPanel::on_key_down(wxKeyEvent& e) {
 
 TrailFrame::TrailFrame(wxWindow* parent)
     : wxFrame(parent, wxID_ANY, "Trail",
-              wxDefaultPosition, wxSize(360, 480),
+              wxDefaultPosition, wxDefaultSize,
               wxDEFAULT_FRAME_STYLE)
 {
+    SetClientSize(FromDIP(wxSize(360, 480)));
     text_ = new wxTextCtrl(this, wxID_ANY, wxEmptyString,
                             wxDefaultPosition, wxDefaultSize,
                             wxTE_MULTILINE | wxTE_READONLY | wxTE_DONTWRAP);
