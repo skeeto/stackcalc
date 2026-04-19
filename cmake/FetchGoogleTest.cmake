@@ -1,5 +1,9 @@
 include(FetchContent)
 
+# Keep GoogleTest's install() rules out of our release packages; otherwise
+# CPack pulls its headers and static libs into the DMG/ZIP.
+set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
+
 FetchContent_Declare(
     googletest
     URL      https://github.com/google/googletest/releases/download/v1.15.2/googletest-1.15.2.tar.gz

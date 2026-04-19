@@ -15,6 +15,13 @@ set_target_properties(stackcalc PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
 
+# Install rules for CPack packaging. On Windows the .exe lands at the
+# root of the ZIP; on macOS the .app bundle lands at the root of the DMG.
+install(TARGETS stackcalc
+    RUNTIME DESTINATION .
+    BUNDLE  DESTINATION .
+)
+
 # On Windows, embed our own DPI-aware application manifest so Windows
 # stops bitmap-scaling the window on high-DPI displays.
 if(WIN32)
