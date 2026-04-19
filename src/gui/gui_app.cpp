@@ -34,9 +34,20 @@ static constexpr size_t kMaxEntryRender = 8192;
 static void write_value_capped(wxRichTextCtrl* ctrl, const std::string& s,
                                const wxColour& full_color = kValueColor) {
     if (s.size() > kMaxEntryRender) {
+        // Belt-and-suspenders for anything the formatter didn't
+        // already shrink (vectors of huge values, etc.).
         ctrl->BeginTextColour(kFlagColor);
         ctrl->WriteText(wxString::Format(
             "<value too large to display: %zu chars>", s.size()));
+        ctrl->EndTextColour();
+    } else if (!s.empty() && s.front() == '<' && s.back() == '>') {
+        // Formatter-emitted placeholder (e.g. "<integer: 499995
+        // digits>" — see Formatter::format_integer_str). Real values
+        // never start with '<', so this is unambiguous. Render in
+        // the warning color so it visually reads as "not the actual
+        // number" rather than blending into ordinary stack entries.
+        ctrl->BeginTextColour(kFlagColor);
+        ctrl->WriteText(wxString::FromUTF8(s.c_str()));
         ctrl->EndTextColour();
     } else {
         ctrl->BeginTextColour(full_color);
