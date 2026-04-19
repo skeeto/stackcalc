@@ -21,4 +21,4 @@ add_library(stackcalc-core STATIC
 target_include_directories(stackcalc-core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
 )
-target_link_libraries(stackcalc-core PUBLIC gmp::gmpxx mpfr::mpfr)
+target_link_libraries(stackcalc-core PUBLIC GMP::gmpxx MPFR::mpfr)
