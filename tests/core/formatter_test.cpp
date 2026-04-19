@@ -75,10 +75,43 @@ TEST_F(FormatterTest, FloatNegative) {
     EXPECT_EQ(fmt.format(Value::make_float(-15, -1)), "-1.5");
 }
 
-TEST_F(FormatterTest, FloatSmall) {
+// --- Normal-format scientific-notation thresholds (matches Emacs `d n`) ---
+
+TEST_F(FormatterTest, FloatNormalSmallStaysDecimal) {
     Formatter fmt(state);
-    // 0.001 = mantissa=1, exponent=-3
-    EXPECT_EQ(fmt.format(Value::make_float(1, -3)), "0.001");
+    // 0.01 (sci_exp = -2) is shown decimally
+    EXPECT_EQ(fmt.format(Value::make_float(1, -2)), "0.01");
+}
+
+TEST_F(FormatterTest, FloatNormalVerySmallSwitchesToSci) {
+    Formatter fmt(state);
+    // 0.001 (sci_exp = -3) is shown in scientific notation
+    EXPECT_EQ(fmt.format(Value::make_float(1, -3)), "1e-3");
+    // 1.5e-4: mantissa=15, exp=-5, sci_exp=-4
+    EXPECT_EQ(fmt.format(Value::make_float(15, -5)), "1.5e-4");
+}
+
+TEST_F(FormatterTest, FloatNormalLargeStaysDecimal) {
+    Formatter fmt(state);  // precision = 12, threshold > 15 → sci
+    // 1e15 (sci_exp = 15) is the largest still shown decimally at prec=12
+    EXPECT_EQ(fmt.format(Value::make_float(1, 15)), "1000000000000000.");
+}
+
+TEST_F(FormatterTest, FloatNormalVeryLargeSwitchesToSci) {
+    Formatter fmt(state);  // precision = 12
+    // 1e16 (sci_exp = 16) crosses threshold → scientific
+    EXPECT_EQ(fmt.format(Value::make_float(1, 16)), "1e16");
+    // 1.234e17 (mantissa=1234, exp=14, sci_exp=17)
+    EXPECT_EQ(fmt.format(Value::make_float(1234, 14)), "1.234e17");
+}
+
+TEST_F(FormatterTest, FloatNormalThresholdScalesWithPrecision) {
+    state.precision = 6;   // threshold becomes sci_exp > 9
+    Formatter fmt(state);
+    // sci_exp = 9 → still decimal
+    EXPECT_EQ(fmt.format(Value::make_float(1, 9)), "1000000000.");
+    // sci_exp = 10 → scientific
+    EXPECT_EQ(fmt.format(Value::make_float(1, 10)), "1e10");
 }
 
 // --- Float display (Scientific) ---

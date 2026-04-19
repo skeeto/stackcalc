@@ -195,7 +195,23 @@ std::string Formatter::format_float(const DecimalFloat& v) const {
         default: break;
     }
 
-    // Normal format
+    // Normal format. Switch to scientific notation for very small or very
+    // large numbers (matches Emacs M-x calc `d n` behavior). Threshold:
+    //   sci_exp <= -3                      → scientific (avoids 0.000…)
+    //   sci_exp >  precision + 3           → scientific (avoids long zero tails)
+    if (sci_exp <= -3 || sci_exp > state_.precision + 3) {
+        // Mantissa: leading digit, decimal point only if more digits.
+        // Trailing zeros are already stripped by DecimalFloat normalization.
+        std::string mantissa;
+        mantissa += digits[0];
+        if (ndigits > 1) {
+            mantissa += state_.point_char;
+            mantissa += digits.substr(1);
+        }
+        return sign + mantissa + "e" + std::to_string(sci_exp);
+    }
+
+    // Decimal layout.
     // Integer part digits = ndigits + exponent
     int int_part_digits = ndigits + v.exponent;
 
