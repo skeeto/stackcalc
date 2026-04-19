@@ -1,7 +1,8 @@
 # stackcalc
 
-A GUI calculator closely modeled after [Emacs `M-x calc`][orig]. This is a
-work-in-progress.
+A GUI calculator closely modeled after [Emacs `M-x calc`][orig].
+
+![](assets/screenshot.png)
 
 ## Build
 
