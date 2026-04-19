@@ -526,7 +526,11 @@ void StackCalcFrame::on_about(wxCommandEvent&) {
     wxMessageBox(
         wxT("stackcalc — RPN calculator\n\n")
         wxT("An Emacs M-x calc clone with arbitrary-precision arithmetic.\n")
-        wxT("See manual.md in the source tree for the full reference."),
+        wxT("See manual.md in the source tree for the full reference.\n\n")
+        wxT("Built with:\n")
+        wxT("  • GMP 6.3.0           LGPL v3 (or GPL v2)\n")
+        wxT("  • MPFR 4.2.2          LGPL v3 or later\n")
+        wxT("  • wxWidgets 3.2.10    wxWindows Library Licence v3.1"),
         wxT("About stackcalc"), wxOK | wxICON_INFORMATION, this);
 }
 
