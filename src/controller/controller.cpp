@@ -373,6 +373,28 @@ void Controller::execute(const std::string& command) {
     if (command == "radix_8")        { state.display_radix = 8; return; }
     if (command == "radix_16")       { state.display_radix = 16; return; }
     if (command == "radix_10")       { state.display_radix = 10; return; }
+    if (command == "radix_n") {
+        // Pop the top value as the new display radix (must be 2..36).
+        // Snapshot so undo restores the popped value.
+        if (stack_.size() > 0) {
+            stack_.begin_command();
+            auto v = stack_.pop();
+            if (v->is_integer()) {
+                int r = static_cast<int>(v->as_integer().v.get_si());
+                if (r >= 2 && r <= 36) {
+                    state.display_radix = r;
+                    stack_.end_command("rdx", {});
+                } else {
+                    stack_.discard_command();
+                    message_ = "Radix must be 2-36";
+                }
+            } else {
+                stack_.discard_command();
+                message_ = "Radix requires an integer";
+            }
+        }
+        return;
+    }
     if (command == "leading_zeros")  { state.leading_zeros = !state.leading_zeros; return; }
     if (command == "grouping")       { state.group_digits = state.group_digits > 0 ? 0 : 3; return; }
     if (command == "complex_pair")   { state.complex_format = ComplexFormat::Pair; return; }

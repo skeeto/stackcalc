@@ -236,6 +236,29 @@ TEST(ControllerTest, SetPrecision) {
     EXPECT_TRUE(ds.mode_line.find("20") != std::string::npos);
 }
 
+// User-reported: 16 d r used to fail with "Unknown command: radix_n".
+TEST(ControllerTest, ArbitraryRadixFromStack) {
+    Controller ctrl;
+    feed_chars(ctrl, "255"); feed_special(ctrl, "RET");
+    feed_chars(ctrl, "16");  feed_special(ctrl, "RET");
+    feed_chars(ctrl, "dr");                 // d r: pop 16, set radix=16
+    auto ds = ctrl.display();
+    EXPECT_EQ(ds.stack_depth, 1);
+    EXPECT_EQ(ds.stack_entries.back(), "16#FF");
+    EXPECT_TRUE(ds.message.empty());
+}
+
+TEST(ControllerTest, ArbitraryRadixRejectsOutOfRange) {
+    Controller ctrl;
+    feed_chars(ctrl, "100"); feed_special(ctrl, "RET");  // > 36
+    feed_chars(ctrl, "dr");
+    auto ds = ctrl.display();
+    EXPECT_FALSE(ds.message.empty());
+    // Bad input must be restored to the stack, not silently dropped.
+    EXPECT_EQ(ds.stack_depth, 1);
+    EXPECT_EQ(ds.stack_entries.back(), "100");
+}
+
 TEST(ControllerTest, HexRadix) {
     Controller ctrl;
     feed_chars(ctrl, "255");
