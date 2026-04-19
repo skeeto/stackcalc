@@ -15,8 +15,8 @@ After building, the executable lands at:
 
 | Platform | Path |
 |---|---|
-| macOS | `build/bin/stackcalc-gui.app` (also runnable via `open`) |
-| Linux/Windows | `build/bin/stackcalc-gui` |
+| macOS | `build/bin/stackcalc.app` (also runnable via `open`) |
+| Linux/Windows | `build/bin/stackcalc` |
 
 The window opens at 480 × 640 logical pixels. It is fully
 keyboard-driven; the mouse is only used to resize the window or

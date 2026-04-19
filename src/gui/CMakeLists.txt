@@ -1,17 +1,17 @@
-add_executable(stackcalc-gui WIN32 MACOSX_BUNDLE
+add_executable(stackcalc WIN32 MACOSX_BUNDLE
     main.cpp
     gui_app.cpp
 )
-target_link_libraries(stackcalc-gui PRIVATE
+target_link_libraries(stackcalc PRIVATE
     stackcalc-controller
     wx::core
     wx::base
     wx::richtext
 )
 
-# Drop the GUI executable (or .app bundle on macOS) into build/bin/
-# instead of build/src/gui/. Test executables stay where they are.
-set_target_properties(stackcalc-gui PROPERTIES
+# Drop the executable (or .app bundle on macOS) into build/bin/ instead
+# of build/src/gui/. Test executables stay where they are.
+set_target_properties(stackcalc PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
 
@@ -19,7 +19,7 @@ set_target_properties(stackcalc-gui PROPERTIES
 # stops bitmap-scaling the window on high-DPI displays.
 if(WIN32)
     enable_language(RC)
-    target_sources(stackcalc-gui PRIVATE stackcalc.rc)
+    target_sources(stackcalc PRIVATE stackcalc.rc)
     # Make the RC compiler find stackcalc.manifest (referenced by name
     # in stackcalc.rc) regardless of where the build is invoked from,
     # and rebuild the .rc.obj when the manifest changes.
