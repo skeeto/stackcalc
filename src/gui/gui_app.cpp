@@ -271,8 +271,8 @@ void StackCalcFrame::build_menus() {
     };
     add_special (edit, "&Drop (Back)",            "DEL");
     add_special (edit, "S&wap (Tab)",             "TAB");
-    add_modified(edit, "Roll Up (Alt+Tab)",       "M-TAB");
-    add_modified(edit, "Last Args (Alt+Enter)",   "M-RET");
+    add_modified(edit, "Roll Top Three Up (Esc Tab / Alt+Tab)",      "M-TAB");
+    add_modified(edit, "Recall Last Args (Esc Enter / Alt+Enter)",   "M-RET");
     edit->AppendSeparator();
     add_action(edit, "Toggle Inverse Flag",     "I");
     add_action(edit, "Toggle Hyperbolic Flag",  "H");
@@ -694,6 +694,30 @@ void CalcPanel::dispatch_keys(const std::string& keys) {
 
 void CalcPanel::dispatch_key(const sc::KeyEvent& k) {
     if (busy_) return;
+    // Menu commands always dispatch the literal key the menu specified
+    // — they don't honour Esc-as-meta, since clicking a menu while
+    // meta is pending shouldn't silently mutate the dispatched key.
+    // Clear the pending state so the user isn't stuck in meta mode
+    // after taking a menu action.
+    if (pending_meta_) { pending_meta_ = false; mode_bar_->Refresh(); }
+    submit_work([this, k]{
+        try { ctrl_.process_key(k); }
+        catch (...) { /* controller absorbs std::exception */ }
+    });
+}
+
+void CalcPanel::dispatch_with_meta(sc::KeyEvent k) {
+    if (pending_meta_) {
+        pending_meta_ = false;
+        mode_bar_->Refresh();
+        // Promote to M-prefixed form. Already-Modified events fall
+        // through unchanged (no double-meta).
+        if (k.type == sc::KeyEvent::Char) {
+            k = sc::KeyEvent::modified(std::string("M-") + k.ch);
+        } else if (k.type == sc::KeyEvent::Special) {
+            k = sc::KeyEvent::modified("M-" + k.name);
+        }
+    }
     submit_work([this, k]{
         try { ctrl_.process_key(k); }
         catch (...) { /* controller absorbs std::exception */ }
@@ -976,6 +1000,10 @@ void ModeBar::on_paint(wxPaintEvent&) {
     if (ds.hyperbolic_flag) flags += " [H]";
     if (ds.keep_args_flag)  flags += " [K]";
     if (!ds.pending_prefix.empty()) flags += " [" + ds.pending_prefix + "-]";
+    // GUI-side meta-prefix indicator. pending_meta_ is a CalcPanel
+    // flag (Esc-as-meta one-shot), separate from the controller's
+    // pending_prefix.
+    if (host_->meta_pending())      flags += " [M-]";
     if (!flags.empty()) {
         dc.SetTextForeground(kFlagColor);
         dc.DrawText(flags, padding + mode_w, mode_y);
@@ -988,11 +1016,7 @@ void CalcPanel::on_char(wxKeyEvent& e) {
 
     if (busy_) return;  // only the cancel keystroke (handled in on_key_down) reaches here
 
-    char ch = static_cast<char>(uc);
-    submit_work([this, ch]{
-        try { ctrl_.process_key(sc::KeyEvent::character(ch)); }
-        catch (...) { /* controller already absorbs std::exception */ }
-    });
+    dispatch_with_meta(sc::KeyEvent::character(static_cast<char>(uc)));
     // Don't Skip — consumed
 }
 
@@ -1026,14 +1050,8 @@ void CalcPanel::on_key_down(wxKeyEvent& e) {
     // Ctrl modifiers — Z and Y for undo/redo — are claimed here;
     // everything else falls through.
     if (ctrl) {
-        if (code == 'Z') {
-            submit_work([this]{ ctrl_.process_key(sc::KeyEvent::character('U')); });
-            return;
-        }
-        if (code == 'Y') {
-            submit_work([this]{ ctrl_.process_key(sc::KeyEvent::character('D')); });
-            return;
-        }
+        if (code == 'Z') { dispatch_with_meta(sc::KeyEvent::character('U')); return; }
+        if (code == 'Y') { dispatch_with_meta(sc::KeyEvent::character('D')); return; }
         e.Skip();
         return;
     }
@@ -1043,36 +1061,48 @@ void CalcPanel::on_key_down(wxKeyEvent& e) {
         case WXK_NUMPAD_ENTER: {
             auto k = alt ? sc::KeyEvent::modified("M-RET")
                          : sc::KeyEvent::special("RET");
-            submit_work([this, k]{ ctrl_.process_key(k); });
+            dispatch_with_meta(k);
             break;
         }
         case WXK_BACK:
+            // Backspace is special: it can mean "edit the entry" OR
+            // "drop top of stack" depending on whether entry is
+            // active. Both go through the runner; meta-prefix
+            // doesn't apply to either.
+            if (pending_meta_) { pending_meta_ = false; mode_bar_->Refresh(); }
             submit_work([this]{
-                // try edit-backspace; if not consumed (no entry
-                // active), drop
                 if (!ctrl_.process_key(sc::KeyEvent::character('\b')))
                     ctrl_.process_key(sc::KeyEvent::special("DEL"));
             });
             break;
         case WXK_DELETE:
-            submit_work([this]{ ctrl_.process_key(sc::KeyEvent::special("DEL")); });
+            dispatch_with_meta(sc::KeyEvent::special("DEL"));
             break;
         case WXK_TAB: {
             auto k = alt ? sc::KeyEvent::modified("M-TAB")
                          : sc::KeyEvent::special("TAB");
-            submit_work([this, k]{ ctrl_.process_key(k); });
+            dispatch_with_meta(k);
             break;
         }
         case WXK_SPACE:
-            submit_work([this]{ ctrl_.process_key(sc::KeyEvent::special("SPC")); });
+            dispatch_with_meta(sc::KeyEvent::special("SPC"));
             break;
         case WXK_ESCAPE:
-            // Cancels in-progress number entry. Goes through the runner
-            // for the same race-free reason as everything else, even
-            // though it doesn't allocate.
-            submit_work([this]{
-                if (ctrl_.input().active()) ctrl_.input().cancel();
-            });
+            // Esc has two roles. If number entry is active, cancel
+            // it (and clear any pending meta — single press to clean
+            // up). Otherwise, toggle the Esc-as-meta one-shot: the
+            // next non-Esc key will be M-prefixed (Emacs convention,
+            // workaround for Alt+Tab being eaten by the Windows app
+            // switcher). A second Esc cancels the meta state.
+            if (cached_display_.input_active) {
+                if (pending_meta_) { pending_meta_ = false; }
+                submit_work([this]{
+                    if (ctrl_.input().active()) ctrl_.input().cancel();
+                });
+            } else {
+                pending_meta_ = !pending_meta_;
+                mode_bar_->Refresh();
+            }
             break;
         default:
             handled = false;

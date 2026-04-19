@@ -91,6 +91,14 @@ public:
     bool is_busy() const { return busy_; }
     bool computing_overlay_visible() const { return computing_overlay_visible_; }
 
+    // Esc-as-meta state: after Esc is pressed, the next keystroke is
+    // promoted to its M-prefixed form (Esc Tab → M-TAB, etc.) — the
+    // Emacs convention, useful when the OS eats Alt-modified keys
+    // (Alt+Tab is the Windows app switcher). Pressing Esc twice
+    // cancels the meta state. ModeBar paints a "[M-]" indicator
+    // while it's true.
+    bool meta_pending() const { return pending_meta_; }
+
     // Wired up by StackCalcFrame after the splitter creates both panes.
     void set_trail_panel(TrailPanel* tp) { trail_panel_ = tp; }
 
@@ -132,6 +140,14 @@ private:
     // wxCallAfter to install the snapshot and redraw.
     void submit_work(std::function<void()> work);
 
+    // Submit a single KeyEvent through the runner, honouring the
+    // Esc-as-meta pending state: if pending_meta_ is set, k is
+    // promoted to its M-prefixed equivalent (Character('x') →
+    // Modified("M-x"), Special("TAB") → Modified("M-TAB"), already-
+    // Modified passes through). The pending flag is cleared and the
+    // mode bar refreshed before submitting.
+    void dispatch_with_meta(sc::KeyEvent k);
+
     // UI-thread half of the on_done flow: install snapshot, clear busy
     // state, redraw.
     void apply_snapshot_and_redraw(sc::DisplayState snapshot);
@@ -152,6 +168,7 @@ private:
     bool              cursor_visible_ = true;
     bool              busy_ = false;           // a job is in flight
     bool              computing_overlay_visible_ = false;
+    bool              pending_meta_ = false;   // Esc-as-meta one-shot flag
     TopBar*           top_bar_   = nullptr;
     wxRichTextCtrl*   stack_ctrl_ = nullptr;
     ModeBar*          mode_bar_  = nullptr;
