@@ -17,6 +17,7 @@ add_library(stackcalc-core STATIC
     mpfr_bridge.cpp
     constants.cpp
     scientific.cpp
+    cancel.cpp
 )
 target_include_directories(stackcalc-core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}

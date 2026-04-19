@@ -6,3 +6,22 @@ FetchContent_Declare(
     URL_HASH SHA256=599bf23e44176c813892b6dfb7b60957041e69b7f4f25144393501f7ca879d85
 )
 FetchContent_MakeAvailable(gmp)
+
+# Enable C++ exception unwinding through GMP's C frames. We install a
+# custom allocator (mp_set_memory_functions) that throws CancelledException
+# on user cancel; that exception has to propagate up through whatever
+# GMP function called the allocator. Without exception-table support
+# in the C compilation, the unwinder hits a frame with no FDE and
+# either terminates or skips RAII destructors above it.
+#   -fexceptions: gcc/clang/mingw — emits .eh_frame for C functions.
+#   /EHa:         MSVC — asynchronous exception model; lets C++
+#                 exceptions cross C frames via SEH unwind.
+foreach(_t IN ITEMS gmp gmpxx)
+    if(TARGET ${_t})
+        if(MSVC)
+            target_compile_options(${_t} PRIVATE /EHa)
+        else()
+            target_compile_options(${_t} PRIVATE -fexceptions)
+        endif()
+    endif()
+endforeach()
