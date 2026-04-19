@@ -1,5 +1,6 @@
 #include "gui_app.hpp"
 #include "persistence.hpp"
+#include <wx/caret.h>
 #include <wx/dcbuffer.h>
 #include <wx/file.h>
 #include <wx/filename.h>
@@ -665,6 +666,13 @@ void CalcPanel::update_stack() {
     // Top of the stack is at line 0; scroll there so the user always
     // sees the most recent entry just below the entry line.
     stack_ctrl_->ShowPosition(0);
+
+    // wxRichTextCtrl positions its caret at the end of the text after
+    // Clear/Write — on Windows the system caret then blinks at the
+    // bottom stack row, which looks like a typing prompt even though
+    // the widget is read-only. Hide it after every rebuild. (macOS
+    // draws its own dark caret; harmless.)
+    if (auto* caret = stack_ctrl_->GetCaret()) caret->Hide();
 }
 
 // === TopBar: custom-painted top region (message + entry) =====================
