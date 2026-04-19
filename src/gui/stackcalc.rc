@@ -1,4 +1,10 @@
-// Pull in wxWidgets' default Windows resources, including the manifest
-// that declares DPI awareness. Without this, Windows bitmap-scales the
-// whole app on high-DPI displays and everything renders blurry.
+// Disable wxWidgets' default manifest — we provide our own with DPI
+// awareness (it also covers themed common controls).
+#define wxUSE_NO_MANIFEST 1
 #include "wx/msw/wx.rc"
+
+// Embed stackcalc.manifest as the standard application manifest
+// (resource ID 1, RT_MANIFEST = 24). Without DPI awareness here,
+// Windows bitmap-scales the window on high-DPI displays and text
+// renders blurry.
+1 24 "stackcalc.manifest"
