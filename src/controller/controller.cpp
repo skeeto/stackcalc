@@ -615,6 +615,32 @@ void Controller::execute(const std::string& command) {
         return;
     }
 
+    // --- Trail navigation (t prefix; quick registers cover the digit subkeys) ---
+    if (command == "trail_yank") {
+        auto& trail = stack_.trail();
+        if (trail.empty()) { message_ = "Trail is empty"; return; }
+        auto v = trail.yank();
+        if (!v) { message_ = "No value at trail pointer"; return; }
+        stack_.begin_command();
+        stack_.push(v);
+        stack_.end_command("yank", {v});
+        return;
+    }
+    if (command == "trail_first") { stack_.trail().set_pointer(0); return; }
+    if (command == "trail_last")  {
+        auto& t = stack_.trail();
+        if (!t.empty()) t.set_pointer(t.size() - 1);
+        return;
+    }
+    if (command == "trail_next") { stack_.trail().move_pointer(+1); return; }
+    if (command == "trail_prev") { stack_.trail().move_pointer(-1); return; }
+    if (command == "trail_here") {
+        auto& t = stack_.trail();
+        if (!t.empty()) t.set_pointer(t.size() - 1);
+        return;
+    }
+    if (command == "trail_kill") { stack_.trail().kill_at_pointer(); return; }
+
     // --- Vector ops ---
     if (command == "transpose") {
         stack_.begin_command();
@@ -796,13 +822,16 @@ DisplayState Controller::display() const {
     ds.mode_line = build_mode_line();
 
     // Trail
-    for (int i = 0; i < stack_.trail().size(); ++i) {
+    for (int i = 0; i < (int)stack_.trail().size(); ++i) {
         auto& entry = stack_.trail().at(i);
         // Empty tag (e.g. plain number entry) renders as just the value.
         ds.trail_entries.push_back(entry.tag.empty()
             ? fmt.format(entry.value)
             : entry.tag + ": " + fmt.format(entry.value));
     }
+    ds.trail_pointer = stack_.trail().empty()
+        ? -1
+        : static_cast<int>(stack_.trail().pointer());
 
     // Message
     ds.message = message_;

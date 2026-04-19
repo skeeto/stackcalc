@@ -131,6 +131,15 @@ void KeyMap::setup_defaults() {
         bind_seq("r", std::string(1, d), std::string("qrecall_") + d);
     }
 
+    // --- Trail navigation (t prefix; coexists with quick-store digits) ---
+    bind_seq("t", "y", "trail_yank");      // push pointer entry onto stack
+    bind_seq("t", "[", "trail_first");     // pointer -> first entry
+    bind_seq("t", "]", "trail_last");      // pointer -> last entry
+    bind_seq("t", "n", "trail_next");      // pointer down
+    bind_seq("t", "p", "trail_prev");      // pointer up
+    bind_seq("t", "h", "trail_here");      // pointer -> last (alias)
+    bind_seq("t", "k", "trail_kill");      // delete entry at pointer
+
     // --- Number theory / combinatorics (k prefix) ---
     bind_seq("k", "c", "choose");
     bind_seq("k", "d", "dfact");

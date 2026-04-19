@@ -456,6 +456,64 @@ TEST(ControllerTest, WordSizeRejectsBadInputs) {
     EXPECT_EQ(ds.stack_depth, 1);                           // 0 restored
 }
 
+// --- Trail navigation (t prefix) ---
+
+TEST(ControllerTest, TrailYankPushesEntryAtPointer) {
+    Controller ctrl;
+    feed_chars(ctrl, "5"); feed_special(ctrl, "RET");
+    feed_chars(ctrl, "7"); feed_special(ctrl, "RET");
+    feed_chars(ctrl, "+");                          // stack: [12], trail has 5,7,+
+    EXPECT_EQ(ctrl.display().stack_entries.back(), "12");
+    feed_chars(ctrl, "ty");                         // yank current trail entry
+    // Pointer is at the latest entry (from the +), so yank pushes the result.
+    EXPECT_EQ(ctrl.display().stack_depth, 2);
+    EXPECT_EQ(ctrl.display().stack_entries.back(), "12");
+}
+
+TEST(ControllerTest, TrailNavigateAndYank) {
+    Controller ctrl;
+    feed_chars(ctrl, "5");  feed_special(ctrl, "RET");
+    feed_chars(ctrl, "7");  feed_special(ctrl, "RET");
+    feed_chars(ctrl, "11"); feed_special(ctrl, "RET");
+    // Trail: [5, 7, 11], pointer = 2 (the latest entry).
+    feed_chars(ctrl, "t[");                         // pointer to first
+    EXPECT_EQ(ctrl.display().trail_pointer, 0);
+    feed_chars(ctrl, "tn");                         // pointer down
+    EXPECT_EQ(ctrl.display().trail_pointer, 1);
+    feed_chars(ctrl, "tn");                         // pointer down
+    EXPECT_EQ(ctrl.display().trail_pointer, 2);
+    feed_chars(ctrl, "tp");                         // pointer up
+    EXPECT_EQ(ctrl.display().trail_pointer, 1);
+    feed_chars(ctrl, "ty");                         // yank entry at pointer (7)
+    EXPECT_EQ(ctrl.display().stack_entries.back(), "7");
+    // Yank itself adds a trail entry, so the trail grew by one and the
+    // pointer now sits on that newest entry.
+    EXPECT_EQ(ctrl.display().trail_entries.size(), 4u);
+    EXPECT_EQ(ctrl.display().trail_pointer, 3);
+    feed_chars(ctrl, "t[");                         // back to first
+    EXPECT_EQ(ctrl.display().trail_pointer, 0);
+    feed_chars(ctrl, "t]");                         // to last
+    EXPECT_EQ(ctrl.display().trail_pointer, 3);
+}
+
+TEST(ControllerTest, TrailKillRemovesPointerEntry) {
+    Controller ctrl;
+    feed_chars(ctrl, "5"); feed_special(ctrl, "RET");
+    feed_chars(ctrl, "7"); feed_special(ctrl, "RET");
+    feed_chars(ctrl, "9"); feed_special(ctrl, "RET");
+    int before = static_cast<int>(ctrl.display().trail_entries.size());
+    feed_chars(ctrl, "tk");                         // delete entry at pointer
+    int after = static_cast<int>(ctrl.display().trail_entries.size());
+    EXPECT_EQ(after, before - 1);
+}
+
+TEST(ControllerTest, TrailYankOnEmptyReportsError) {
+    Controller ctrl;
+    feed_chars(ctrl, "ty");
+    EXPECT_FALSE(ctrl.display().message.empty());
+    EXPECT_EQ(ctrl.display().stack_depth, 0);
+}
+
 // --- Quick registers q0-q9 ---
 
 TEST(ControllerTest, QuickStoreAndRecall) {

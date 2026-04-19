@@ -22,6 +22,10 @@ struct DisplayState {
     // Trail entries (formatted)
     std::vector<std::string> trail_entries;
 
+    // Index into trail_entries marked by the pointer (for yank/navigation),
+    // or -1 if the trail is empty.
+    int trail_pointer = -1;
+
     // Message (error, result info, etc.)
     std::string message;
 

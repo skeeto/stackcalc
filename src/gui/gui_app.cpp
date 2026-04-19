@@ -51,21 +51,38 @@ StackCalcFrame::StackCalcFrame()
     : wxFrame(nullptr, wxID_ANY, "stackcalc", wxDefaultPosition, wxDefaultSize),
       next_menu_id_(ID_DispatchBase)
 {
-    SetClientSize(FromDIP(wxSize(480, 640)));
+    SetClientSize(FromDIP(wxSize(960, 640)));
+    Centre();
 
-    // Single central panel — must exist before menu items reference it
-    // via the dispatch handler.
-    panel_ = new CalcPanel(this);
+    // Splitter hosts the calculator on the left and the trail on the right.
+    splitter_ = new wxSplitterWindow(
+        this, wxID_ANY, wxDefaultPosition, wxDefaultSize,
+        wxSP_LIVE_UPDATE | wxSP_THIN_SASH | wxBORDER_NONE);
+    splitter_->SetMinimumPaneSize(FromDIP(150));
+    splitter_->SetSashGravity(0.5);  // share resize equally between calc and trail
+
+    panel_ = new CalcPanel(splitter_);
+    trail_ = new TrailPanel(splitter_, panel_);
+    panel_->set_trail_panel(trail_);
+
+    // The sash position passed here is interpreted relative to the
+    // splitter's current width — which is still its default at
+    // construction time. We re-set it below after layout.
+    splitter_->SplitVertically(panel_, trail_);
+
     auto* sizer = new wxBoxSizer(wxVERTICAL);
-    sizer->Add(panel_, 1, wxEXPAND);
+    sizer->Add(splitter_, 1, wxEXPAND);
     SetSizer(sizer);
 
     build_menus();
-
-    // Trail window (hidden by default)
-    trail_ = new TrailFrame(this);
-
     panel_->SetFocus();
+
+    // Center the sash once layout has run and the splitter has its real
+    // width. Without this, the trail pane comes out near-zero-width
+    // because the splitter was 0 wide when SplitVertically was called.
+    CallAfter([this] {
+        splitter_->SetSashPosition(splitter_->GetClientSize().GetWidth() / 2);
+    });
 }
 
 void StackCalcFrame::build_menus() {
@@ -329,10 +346,19 @@ void StackCalcFrame::build_menus() {
     add_action(mode, "Set Word Size from Top", "bw");
     mb->Append(mode, "&Modes");
 
-    // ---- View ----
-    auto* view = new wxMenu();
-    view->AppendCheckItem(ID_ToggleTrail, "Show &Trail\tF2");
-    mb->Append(view, "&View");
+    // ---- Trail ----
+    // The trail panel is always visible on the right; these items move
+    // the trail pointer or yank/kill at the pointer.
+    auto* trail = new wxMenu();
+    add_action(trail, "&Yank Selected onto Stack", "ty");
+    trail->AppendSeparator();
+    add_action(trail, "Go to &First",   "t[");
+    add_action(trail, "Go to &Last",    "t]");
+    add_action(trail, "Pre&vious Entry","tp");
+    add_action(trail, "&Next Entry",    "tn");
+    trail->AppendSeparator();
+    add_action(trail, "&Delete Entry",  "tk");
+    mb->Append(trail, "&Trail");
 
     // ---- Help ----
     auto* help = new wxMenu();
@@ -342,7 +368,6 @@ void StackCalcFrame::build_menus() {
     SetMenuBar(mb);
 
     // One handler covers all dispatch IDs; specific ones get their own.
-    Bind(wxEVT_MENU, &StackCalcFrame::on_toggle_trail, this, ID_ToggleTrail);
     Bind(wxEVT_MENU, &StackCalcFrame::on_quit,        this, wxID_EXIT);
     Bind(wxEVT_MENU, &StackCalcFrame::on_about,       this, wxID_ABOUT);
     Bind(wxEVT_MENU, &StackCalcFrame::on_menu_dispatch,
@@ -362,7 +387,7 @@ void StackCalcFrame::on_char_hook(wxKeyEvent& e) {
 
     int code = e.GetKeyCode();
 
-    // Function keys: let menu accelerators (F2 = trail) handle them.
+    // Function keys: reserved for future menu accelerators; pass through.
     if (code >= WXK_F1 && code <= WXK_F12) {
         e.Skip();
         return;
@@ -396,22 +421,8 @@ void StackCalcFrame::on_about(wxCommandEvent&) {
         "About stackcalc", wxOK | wxICON_INFORMATION, this);
 }
 
-void StackCalcFrame::on_toggle_trail(wxCommandEvent&) {
-    show_trail(!trail_->IsShown());
-}
-
 void StackCalcFrame::on_quit(wxCommandEvent&) {
     Close(true);
-}
-
-void StackCalcFrame::show_trail(bool show) {
-    trail_->Show(show);
-    if (show) {
-        // Refresh trail content from current display state
-        trail_->update_entries(panel_->controller().display().trail_entries);
-    }
-    GetMenuBar()->Check(ID_ToggleTrail, show);
-    panel_->SetFocus();
 }
 
 // === CalcPanel ================================================================
@@ -493,12 +504,7 @@ void CalcPanel::redraw() {
     update_stack();
     top_bar_->Refresh();
     mode_bar_->Refresh();
-
-    // If trail window is visible, push the latest entries
-    auto* frame = static_cast<StackCalcFrame*>(GetParent());
-    if (frame && frame->trail() && frame->trail()->IsShown()) {
-        frame->trail()->update_entries(ctrl_.display().trail_entries);
-    }
+    if (trail_panel_) trail_panel_->refresh_from_state();
 }
 
 void CalcPanel::on_blink_tick(wxTimerEvent&) {
@@ -666,11 +672,6 @@ void CalcPanel::on_char(wxKeyEvent& e) {
     // Don't Skip — consumed
 }
 
-void CalcPanel::toggle_trail() {
-    auto* frame = static_cast<StackCalcFrame*>(GetParent());
-    if (frame) frame->show_trail(!frame->trail()->IsShown());
-}
-
 void CalcPanel::on_key_down(wxKeyEvent& e) {
     bool ctrl = e.ControlDown() || e.RawControlDown();
     bool alt  = e.AltDown();
@@ -708,10 +709,6 @@ void CalcPanel::on_key_down(wxKeyEvent& e) {
             if (ctrl_.input().active()) ctrl_.input().cancel();
             break;
 
-        case WXK_F2:
-            toggle_trail();
-            break;
-
         case 'Z':
             if (ctrl) {
                 ctrl_.process_key(sc::KeyEvent::character('U'));
@@ -741,46 +738,62 @@ void CalcPanel::on_key_down(wxKeyEvent& e) {
     }
 }
 
-// === TrailFrame ===============================================================
+// === TrailPanel: right-pane trail viewer =====================================
 
-TrailFrame::TrailFrame(wxWindow* parent)
-    : wxFrame(parent, wxID_ANY, "Trail",
-              wxDefaultPosition, wxDefaultSize,
-              wxDEFAULT_FRAME_STYLE)
+TrailPanel::TrailPanel(wxWindow* parent, CalcPanel* host)
+    : wxRichTextCtrl(parent, wxID_ANY, wxEmptyString,
+                     wxDefaultPosition, wxDefaultSize,
+                     wxRE_READONLY | wxRE_MULTILINE | wxBORDER_NONE)
+    , host_(host)
 {
-    SetClientSize(FromDIP(wxSize(360, 480)));
-    text_ = new wxTextCtrl(this, wxID_ANY, wxEmptyString,
-                            wxDefaultPosition, wxDefaultSize,
-                            wxTE_MULTILINE | wxTE_READONLY | wxTE_DONTWRAP);
-    text_->SetFont(wxFont(wxFontInfo(12).FaceName("Menlo")));
-    text_->SetBackgroundColour(kBgColor);
-    text_->SetForegroundColour(kValueColor);
+    SetFont(host->mono_font());
+    SetBackgroundColour(kBgColor);
+    SetForegroundColour(kValueColor);
+    SetEditable(false);
 
-    auto* sizer = new wxBoxSizer(wxVERTICAL);
-    sizer->Add(text_, 1, wxEXPAND);
-    SetSizer(sizer);
+    // Forward keystrokes to the calculator so typing still works while
+    // the trail widget has focus from a click-to-select. Same pattern as
+    // the stack widget.
+    Bind(wxEVT_KEY_DOWN, &CalcPanel::on_key_down, host_);
+    Bind(wxEVT_CHAR,     &CalcPanel::on_char,     host_);
 
-    // Hide instead of destroy when user closes
-    Bind(wxEVT_CLOSE_WINDOW, &TrailFrame::on_close, this);
+    refresh_from_state();
 }
 
-void TrailFrame::on_close(wxCloseEvent&) {
-    Hide();
-    // Update menu check state
-    if (auto* parent = static_cast<StackCalcFrame*>(GetParent())) {
-        parent->GetMenuBar()->Check(ID_ToggleTrail, false);
-        parent->panel()->SetFocus();
-    }
-}
+void TrailPanel::refresh_from_state() {
+    auto ds = host_->controller().display();
 
-void TrailFrame::update_entries(const std::vector<std::string>& entries) {
-    wxString out;
-    for (auto& e : entries) {
-        out += wxString::FromUTF8(e.c_str()) + "\n";
+    Freeze();
+    Clear();
+
+    // Each row: "  tag: value" (2-space indent), or "> tag: value" for
+    // the entry at the trail pointer (rendered yellow for emphasis).
+    int n = static_cast<int>(ds.trail_entries.size());
+    int ptr = ds.trail_pointer;
+    int ptr_line_pos = -1;
+    for (int i = 0; i < n; ++i) {
+        bool is_pointer = (i == ptr);
+        if (is_pointer) ptr_line_pos = GetLastPosition();
+
+        BeginTextColour(is_pointer ? kFlagColor : kLabelColor);
+        WriteText(is_pointer ? "> " : "  ");
+        EndTextColour();
+
+        BeginTextColour(is_pointer ? kFlagColor : kValueColor);
+        WriteText(wxString::FromUTF8(ds.trail_entries[i].c_str()));
+        EndTextColour();
+
+        if (i + 1 < n) Newline();
     }
-    text_->ChangeValue(out);
-    // Scroll to bottom
-    text_->ShowPosition(text_->GetLastPosition());
+
+    Thaw();
+
+    // Keep the trail-pointer line visible after navigation.
+    if (ptr_line_pos >= 0) {
+        ShowPosition(ptr_line_pos);
+    } else {
+        ShowPosition(GetLastPosition());
+    }
 }
 
 // === StackCalcApp =============================================================

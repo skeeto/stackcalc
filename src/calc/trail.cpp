@@ -33,4 +33,14 @@ ValuePtr Trail::yank(int offset) const {
     return entries_[pos].value;
 }
 
+void Trail::kill_at_pointer() {
+    if (entries_.empty()) return;
+    entries_.erase(entries_.begin() + pointer_);
+    if (entries_.empty()) {
+        pointer_ = 0;
+    } else if (pointer_ >= entries_.size()) {
+        pointer_ = entries_.size() - 1;
+    }
+}
+
 } // namespace sc

@@ -2,12 +2,13 @@
 
 #include <wx/wx.h>
 #include <wx/timer.h>
+#include <wx/splitter.h>
 #include <wx/richtext/richtextctrl.h>
 #include <unordered_map>
 #include "controller.h"
 
 class CalcPanel;
-class TrailFrame;
+class TrailPanel;
 class TopBar;
 class ModeBar;
 
@@ -17,12 +18,12 @@ public:
     bool OnInit() override;
 };
 
-// Main calculator window
+// Main calculator window. Hosts a wxSplitterWindow whose left pane is
+// the CalcPanel (entry/stack/mode) and right pane is the TrailPanel.
 class StackCalcFrame : public wxFrame {
 public:
     StackCalcFrame();
 
-    void on_toggle_trail(wxCommandEvent& e);
     void on_quit(wxCommandEvent& e);
     void on_about(wxCommandEvent& e);
 
@@ -37,9 +38,8 @@ public:
     // to the controller. Looks up event.GetId() in menu_dispatch_.
     void on_menu_dispatch(wxCommandEvent& e);
 
-    CalcPanel* panel() { return panel_; }
-    TrailFrame* trail() { return trail_; }
-    void show_trail(bool show);
+    CalcPanel*  panel() { return panel_; }
+    TrailPanel* trail() { return trail_; }
 
 private:
     void build_menus();
@@ -49,8 +49,9 @@ private:
     // "Name (k e y s)". Pass empty `keys` for an inert label.
     void add_action(wxMenu* menu, const wxString& name, const char* keys);
 
-    CalcPanel* panel_ = nullptr;
-    TrailFrame* trail_ = nullptr;
+    wxSplitterWindow* splitter_ = nullptr;
+    CalcPanel*        panel_ = nullptr;
+    TrailPanel*       trail_ = nullptr;
 
     // Map of menu-item ID → keystroke string for on_menu_dispatch.
     std::unordered_map<int, std::string> menu_dispatch_;
@@ -72,6 +73,9 @@ public:
     bool cursor_visible() const { return cursor_visible_; }
     const wxFont& mono_font() const { return mono_font_; }
 
+    // Wired up by StackCalcFrame after the splitter creates both panes.
+    void set_trail_panel(TrailPanel* tp) { trail_panel_ = tp; }
+
     // Re-render after state change.
     void redraw();
 
@@ -85,7 +89,6 @@ public:
 private:
     void on_blink_tick(wxTimerEvent& e);
     void update_stack();
-    void toggle_trail();
 
     sc::Controller    ctrl_;
     wxFont            mono_font_;
@@ -94,6 +97,7 @@ private:
     TopBar*           top_bar_   = nullptr;
     wxRichTextCtrl*   stack_ctrl_ = nullptr;
     ModeBar*          mode_bar_  = nullptr;
+    TrailPanel*       trail_panel_ = nullptr;  // owned by the frame
 };
 
 // Custom-painted top subpanel: error/info message (when present) and
@@ -121,22 +125,21 @@ private:
     int        desired_height_ = 0;
 };
 
-// Separate trail window
-class TrailFrame : public wxFrame {
+// Right-pane trail viewer: native rich-text widget showing every trail
+// entry with a marker on the entry at the trail pointer.
+class TrailPanel : public wxRichTextCtrl {
 public:
-    explicit TrailFrame(wxWindow* parent);
+    TrailPanel(wxWindow* parent, CalcPanel* host);
 
-    void update_entries(const std::vector<std::string>& entries);
+    // Rebuild the displayed text from the controller's trail.
+    void refresh_from_state();
 
 private:
-    void on_close(wxCloseEvent& e);
-
-    wxTextCtrl* text_ = nullptr;
+    CalcPanel* host_;
 };
 
 // IDs for menu items
 enum {
-    ID_ToggleTrail = wxID_HIGHEST + 1,
     // Dispatching menu items (the ones that just feed keystrokes) live
     // in a contiguous range starting here; on_menu_dispatch handles them
     // all via the menu_dispatch_ table.

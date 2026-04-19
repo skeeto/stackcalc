@@ -28,6 +28,11 @@ public:
     ValuePtr yank() const;
     ValuePtr yank(int offset) const;
 
+    // Delete the entry at the pointer. Pointer stays at the same index
+    // (now pointing at what was the next entry), or moves to the new
+    // last entry if it was already at the end.
+    void kill_at_pointer();
+
 private:
     std::vector<TrailEntry> entries_;
     size_t pointer_ = 0;
