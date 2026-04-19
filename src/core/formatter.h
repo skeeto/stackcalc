@@ -19,6 +19,8 @@ private:
     std::string format_integer(const Integer& v) const;
     std::string format_fraction(const Fraction& v) const;
     std::string format_float(const DecimalFloat& v) const;
+    // Float in a non-decimal display radix, e.g. "16#3.243F6A8885" for pi.
+    std::string format_float_radix(const DecimalFloat& v, int radix) const;
     std::string format_complex(const RectComplex& v) const;
     std::string format_polar(const PolarComplex& v) const;
     std::string format_hms(const HMS& v) const;

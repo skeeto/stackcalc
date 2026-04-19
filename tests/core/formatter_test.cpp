@@ -114,6 +114,54 @@ TEST_F(FormatterTest, FloatNormalThresholdScalesWithPrecision) {
     EXPECT_EQ(fmt.format(Value::make_float(1, 10)), "1e10");
 }
 
+// --- Float display in non-decimal radix ---
+
+TEST_F(FormatterTest, FloatHexInteger) {
+    state.display_radix = 16;
+    Formatter fmt(state);
+    // 256.0 = mantissa=256, exp=0 → "16#100." in hex
+    EXPECT_EQ(fmt.format(Value::make_float(256, 0)), "16#100.");
+}
+
+TEST_F(FormatterTest, FloatHexFraction) {
+    state.display_radix = 16;
+    Formatter fmt(state);
+    // 0.5 = mantissa=5, exp=-1 → "16#0.8" in hex (5/10 = 8/16)
+    EXPECT_EQ(fmt.format(Value::make_float(5, -1)), "16#0.8");
+}
+
+TEST_F(FormatterTest, FloatBinaryFraction) {
+    state.display_radix = 2;
+    Formatter fmt(state);
+    // 0.5 → "2#0.1"; 0.25 → "2#0.01"
+    EXPECT_EQ(fmt.format(Value::make_float(5, -1)),  "2#0.1");
+    EXPECT_EQ(fmt.format(Value::make_float(25, -2)), "2#0.01");
+}
+
+TEST_F(FormatterTest, FloatNegativeHex) {
+    state.display_radix = 16;
+    Formatter fmt(state);
+    // -0.5 → "-16#0.8"
+    EXPECT_EQ(fmt.format(Value::make_float(-5, -1)), "-16#0.8");
+}
+
+TEST_F(FormatterTest, FloatHexZero) {
+    state.display_radix = 16;
+    Formatter fmt(state);
+    EXPECT_EQ(fmt.format(Value::make_float(0, 0)), "16#0.");
+}
+
+TEST_F(FormatterTest, FloatHexPi) {
+    // pi at precision 12: 314159265359 * 10^-11 → integer 3, fractional ~243F6A...
+    state.display_radix = 16;
+    Formatter fmt(state);
+    auto pi = Value::make_float(mpz_class("314159265359"), -11);
+    auto out = fmt.format(pi);
+    // We don't pin the trailing rounding, just verify the prefix matches.
+    EXPECT_TRUE(out.rfind("16#3.243F6A88", 0) == 0)
+        << "got: " << out;
+}
+
 // --- Float display (Scientific) ---
 
 TEST_F(FormatterTest, FloatSci) {

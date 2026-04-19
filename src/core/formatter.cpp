@@ -92,6 +92,13 @@ std::string Formatter::format_fraction(const Fraction& v) const {
 }
 
 std::string Formatter::format_float(const DecimalFloat& v) const {
+    // Non-decimal radix: render the float in the configured base. Sci/Eng/
+    // Fix don't have meaningful semantics in a non-decimal base, so this
+    // path always uses the natural base-N representation.
+    if (state_.display_radix != 10) {
+        return format_float_radix(v, state_.display_radix);
+    }
+
     if (decimal_float::is_zero(v)) {
         switch (state_.display_format) {
             case DisplayFormat::Sci: return "0" + std::string(1, state_.point_char) + "e0";
@@ -229,6 +236,71 @@ std::string Formatter::format_float(const DecimalFloat& v) const {
     std::string int_str = group_digits(digits.substr(0, int_part_digits));
     std::string frac_str = digits.substr(int_part_digits);
     return sign + int_str + state_.point_char + frac_str;
+}
+
+std::string Formatter::format_float_radix(const DecimalFloat& v, int B) const {
+    // Radix prefix matches integer formatting: "B#digits.fractional".
+    std::string prefix = std::to_string(B) + "#";
+
+    if (decimal_float::is_zero(v)) {
+        return prefix + "0" + state_.point_char;
+    }
+
+    std::string sign = decimal_float::is_negative(v) ? "-" : "";
+    mpz_class abs_m = ::abs(v.mantissa);
+
+    // Split absolute value into floor(integer_part) and frac_num/denom.
+    mpz_class integer_part;
+    mpz_class frac_num;
+    mpz_class denom;
+    if (v.exponent >= 0) {
+        // Whole integer: abs_m * 10^exponent
+        mpz_ui_pow_ui(integer_part.get_mpz_t(), 10,
+                      static_cast<unsigned long>(v.exponent));
+        integer_part *= abs_m;
+        frac_num = 0;
+        denom = 1;
+    } else {
+        mpz_ui_pow_ui(denom.get_mpz_t(), 10,
+                      static_cast<unsigned long>(-v.exponent));
+        mpz_fdiv_qr(integer_part.get_mpz_t(), frac_num.get_mpz_t(),
+                    abs_m.get_mpz_t(), denom.get_mpz_t());
+    }
+
+    // Integer part in base B; uppercase the alpha digits to match the
+    // existing integer formatter.
+    std::string int_str = integer_part.get_str(B);
+    if (B > 10) {
+        for (auto& c : int_str) c = static_cast<char>(std::toupper(c));
+    }
+
+    // Fractional digits: iteratively multiply by B and extract the integer
+    // quotient. Cap at the number of base-B digits that match our decimal
+    // precision (so 12-digit decimal precision -> ~10 hex digits, ~40
+    // binary digits, etc.).
+    std::string frac_str;
+    if (frac_num != 0) {
+        int max_digits = std::max(1, static_cast<int>(
+            std::ceil(state_.precision / std::log10(static_cast<double>(B)))));
+        for (int i = 0; i < max_digits && frac_num != 0; ++i) {
+            frac_num *= B;
+            mpz_class q;
+            mpz_class r;
+            mpz_fdiv_qr(q.get_mpz_t(), r.get_mpz_t(),
+                        frac_num.get_mpz_t(), denom.get_mpz_t());
+            frac_num = std::move(r);
+            unsigned long d = q.get_ui();
+            frac_str += (d < 10) ? static_cast<char>('0' + d)
+                                 : static_cast<char>('A' + d - 10);
+        }
+        // Strip trailing zeros (e.g., 0.5 in hex is 0.8, not 0.8000…).
+        while (!frac_str.empty() && frac_str.back() == '0') frac_str.pop_back();
+    }
+
+    if (frac_str.empty()) {
+        return sign + prefix + int_str + state_.point_char;
+    }
+    return sign + prefix + int_str + state_.point_char + frac_str;
 }
 
 std::string Formatter::format_real(const ValuePtr& v) const {
