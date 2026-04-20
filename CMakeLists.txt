@@ -26,6 +26,26 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 # Export compile commands for tooling
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# How to obtain GMP, MPFR, and wxWidgets:
+#   FETCH (default) — pin specific upstream versions and build them
+#                     from FetchContent. Reproducible, hermetic, slow
+#                     first build.
+#   LOCAL           — find system-installed packages via find_*. Fast,
+#                     and the right call on Linux where the distro
+#                     ships them. On Linux: apt install libgmp-dev
+#                     libmpfr-dev libwxgtk3.2-dev (or equivalent).
+# Caveat: cancellation (Ctrl+G during a long calc) requires GMP and
+# MPFR built with -fexceptions; the FETCH path injects that flag,
+# but distro packages typically aren't built that way, so cancel
+# will silently fail to interrupt mid-allocation under DEPS=LOCAL.
+# The pre-flight result-size cap still works.
+set(DEPS "FETCH" CACHE STRING
+    "Where to obtain GMP/MPFR/wxWidgets: FETCH or LOCAL")
+set_property(CACHE DEPS PROPERTY STRINGS FETCH LOCAL)
+if(NOT DEPS MATCHES "^(FETCH|LOCAL)$")
+    message(FATAL_ERROR "DEPS must be FETCH or LOCAL (got '${DEPS}')")
+endif()
+
 include(cmake/FetchGMP.cmake)
 include(cmake/FetchMPFR.cmake)
 

@@ -1,3 +1,27 @@
+if(DEPS STREQUAL "LOCAL")
+    # System wxWidgets via wx-config (Linux distros, Homebrew on macOS).
+    # FindwxWidgets is bundled with CMake. It returns ${wxWidgets_LIBRARIES}
+    # as a single combined link line for all requested components, plus
+    # ${wxWidgets_INCLUDE_DIRS} / ${wxWidgets_DEFINITIONS} / ${wxWidgets_CXX_FLAGS}.
+    # ${wxWidgets_USE_FILE} bundles those into a single include(...) that
+    # sets things globally — fine for a single-app build like ours.
+    find_package(wxWidgets 3.2 REQUIRED COMPONENTS core base richtext)
+    include(${wxWidgets_USE_FILE})
+    # Wrap the find result in modern-style imported targets so the rest
+    # of the build can name them as wx::core / wx::base / wx::richtext
+    # uniformly with the FETCH path. All three aliases point at the
+    # same combined link list — FindwxWidgets doesn't separate per-
+    # component, and the linker will dedupe.
+    foreach(_comp core base richtext)
+        if(NOT TARGET wx::${_comp})
+            add_library(wx::${_comp} INTERFACE IMPORTED)
+            target_link_libraries(wx::${_comp}
+                INTERFACE ${wxWidgets_LIBRARIES})
+        endif()
+    endforeach()
+    return()
+endif()
+
 include(FetchContent)
 
 # Must be set BEFORE FetchContent_MakeAvailable

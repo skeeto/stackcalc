@@ -1,3 +1,27 @@
+if(DEPS STREQUAL "LOCAL")
+    # System libgmp / libgmpxx. The headers and libraries are looked
+    # up via find_path / find_library so this works on any sensibly
+    # configured Unix-like system; CMake's defaults search /usr/{lib,
+    # include}, /usr/local, and Homebrew prefixes.
+    find_path(GMP_INCLUDE_DIR     NAMES gmp.h   REQUIRED)
+    find_library(GMP_LIBRARY      NAMES gmp     REQUIRED)
+    find_library(GMPXX_LIBRARY    NAMES gmpxx   REQUIRED)
+    if(NOT TARGET GMP::gmp)
+        add_library(GMP::gmp UNKNOWN IMPORTED)
+        set_target_properties(GMP::gmp PROPERTIES
+            IMPORTED_LOCATION             "${GMP_LIBRARY}"
+            INTERFACE_INCLUDE_DIRECTORIES "${GMP_INCLUDE_DIR}")
+    endif()
+    if(NOT TARGET GMP::gmpxx)
+        add_library(GMP::gmpxx UNKNOWN IMPORTED)
+        set_target_properties(GMP::gmpxx PROPERTIES
+            IMPORTED_LOCATION             "${GMPXX_LIBRARY}"
+            INTERFACE_INCLUDE_DIRECTORIES "${GMP_INCLUDE_DIR}"
+            INTERFACE_LINK_LIBRARIES      GMP::gmp)
+    endif()
+    return()
+endif()
+
 include(FetchContent)
 
 FetchContent_Declare(

@@ -23,9 +23,21 @@ short version: type numbers and press `RET` to push, then operators
     $ cmake -B build
     $ cmake --build build
 
-Dependencies (GMP, MPFR, wxWidgets, GoogleTest) are downloaded
-automatically by CMake. The executable lands at
+Dependencies (GMP, MPFR, wxWidgets) are downloaded and built by
+CMake's FetchContent. The executable lands at
 `build/bin/stackcalc.app` (macOS) or `build/bin/stackcalc[.exe]`.
+
+On Linux, where the distro packages those libraries, prefer:
+
+    $ cmake -B build -DDEPS=LOCAL
+    $ cmake --build build
+
+Apt example: `apt install libgmp-dev libmpfr-dev libwxgtk3.2-dev`.
+`-DDEPS=LOCAL` finds them via the system's `wx-config` /
+`pkg-config` instead of building everything from scratch. (Caveat:
+distro libgmp/libmpfr aren't compiled with `-fexceptions`, so the
+Ctrl+G "cancel a runaway calculation" feature can't unwind through
+their stack frames — the result-size cap still works as a backstop.)
 
 ## License
 

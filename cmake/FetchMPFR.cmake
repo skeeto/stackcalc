@@ -1,3 +1,16 @@
+if(DEPS STREQUAL "LOCAL")
+    find_path(MPFR_INCLUDE_DIR  NAMES mpfr.h  REQUIRED)
+    find_library(MPFR_LIBRARY   NAMES mpfr    REQUIRED)
+    if(NOT TARGET MPFR::mpfr)
+        add_library(MPFR::mpfr UNKNOWN IMPORTED)
+        set_target_properties(MPFR::mpfr PROPERTIES
+            IMPORTED_LOCATION             "${MPFR_LIBRARY}"
+            INTERFACE_INCLUDE_DIRECTORIES "${MPFR_INCLUDE_DIR}"
+            INTERFACE_LINK_LIBRARIES      GMP::gmp)
+    endif()
+    return()
+endif()
+
 include(FetchContent)
 
 FetchContent_Declare(
