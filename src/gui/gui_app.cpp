@@ -694,6 +694,13 @@ CalcPanel::CalcPanel(wxWindow* parent)
         -1, wxALIGN_LEFT, wxDATAVIEW_COL_RESIZABLE);
     stack_ctrl_->Bind(wxEVT_DATAVIEW_ITEM_EDITING_DONE,
                       &CalcPanel::on_dataview_edit_done, this);
+    // macOS NSTableView's default double-click behavior is "select
+    // row" — it doesn't enter edit mode without a second separate
+    // click. Catch wxEVT_DATAVIEW_ITEM_ACTIVATED (which fires on
+    // double-click) and trigger the edit programmatically via
+    // EditItem so the substring-copy affordance actually works.
+    stack_ctrl_->Bind(wxEVT_DATAVIEW_ITEM_ACTIVATED,
+                      &CalcPanel::on_dataview_activated, this);
 
     // Mode line + flag indicators live on the frame's wxStatusBar
     // (created in StackCalcFrame's ctor); no panel-level child
@@ -1134,6 +1141,22 @@ void CalcPanel::on_dataview_edit_done(wxDataViewEvent& e) {
     e.Veto();
 }
 
+void CalcPanel::on_dataview_activated(wxDataViewEvent& e) {
+    // Open the in-place editor on the value column. The activation
+    // event reports the column the user double-clicked, but it
+    // might be the index/tag (column 0 — INERT and not useful for
+    // substring copy) or the value column. EditItem on an INERT
+    // column is a no-op. So just unconditionally edit column-1 of
+    // the activated row, regardless of which column was clicked.
+    auto* ctrl = static_cast<wxDataViewCtrl*>(e.GetEventObject());
+    if (!ctrl) return;
+    auto item = e.GetItem();
+    if (!item.IsOk()) return;
+    auto* col = ctrl->GetColumn(1);
+    if (!col) return;
+    ctrl->EditItem(item, col);
+}
+
 // === TrailPanel: right-pane trail viewer =====================================
 
 TrailPanel::TrailPanel(wxWindow* parent, CalcPanel* host)
@@ -1165,6 +1188,11 @@ TrailPanel::TrailPanel(wxWindow* parent, CalcPanel* host)
                      -1, wxALIGN_LEFT, wxDATAVIEW_COL_RESIZABLE);
     Bind(wxEVT_DATAVIEW_ITEM_EDITING_DONE,
          &CalcPanel::on_dataview_edit_done, host_);
+    // See stack_ctrl_'s same binding for why this is needed —
+    // double-click doesn't auto-trigger edit mode on macOS, so we
+    // call EditItem ourselves on activation.
+    Bind(wxEVT_DATAVIEW_ITEM_ACTIVATED,
+         &CalcPanel::on_dataview_activated, host_);
 
     // Forward keystrokes to the calculator so typing still works
     // while the trail widget has focus from click-to-select. Frame

@@ -140,6 +140,13 @@ public:
     // so TrailPanel's ctor can bind it on `host_`.
     void on_dataview_edit_done(wxDataViewEvent& e);
 
+    // Handler for wxEVT_DATAVIEW_ITEM_ACTIVATED (double-click /
+    // Enter on a row). On macOS NSTableView's default double-click
+    // action is "select row" — it doesn't enter edit mode without
+    // a separate second click — so we explicitly call EditItem to
+    // open the in-place editor. Public for the same reason.
+    void on_dataview_activated(wxDataViewEvent& e);
+
 private:
     void on_blink_tick(wxTimerEvent& e);
     void on_overlay_tick(wxTimerEvent& e);
