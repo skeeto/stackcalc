@@ -15,7 +15,6 @@
 class CalcPanel;
 class TrailPanel;
 class TopBar;
-class ModeBar;
 
 // Main application class
 class StackCalcApp : public wxApp {
@@ -64,10 +63,10 @@ private:
 };
 
 // Hosts the calculator display, top to bottom:
-//   TopBar          custom-painted: message + "." marker + entry line
-//   wxRichTextCtrl  selectable stack — top of stack at the TOP, growing
-//                   downward (1: just below entry, 2:, 3:, …)
-//   ModeBar         custom-painted: mode line + flag indicators
+//   TopBar              custom-painted: message + "." marker + entry line
+//   wxDataViewListCtrl  selectable stack — top of stack at the TOP,
+//                       growing downward (1: just below entry, 2:, …)
+// Mode line and flag indicators live on the frame's wxStatusBar.
 class CalcPanel : public wxPanel {
 public:
     explicit CalcPanel(wxWindow* parent);
@@ -75,7 +74,6 @@ public:
 
     sc::Controller& controller() { return ctrl_; }
     TopBar*  top_bar()  { return top_bar_; }
-    ModeBar* mode_bar() { return mode_bar_; }
     bool cursor_visible() const { return cursor_visible_; }
     const wxFont& mono_font() const { return mono_font_; }
 
@@ -96,8 +94,8 @@ public:
     // promoted to its M-prefixed form (Esc Tab → M-TAB, etc.) — the
     // Emacs convention, useful when the OS eats Alt-modified keys
     // (Alt+Tab is the Windows app switcher). Pressing Esc twice
-    // cancels the meta state. ModeBar paints a "[M-]" indicator
-    // while it's true.
+    // cancels the meta state. The status bar shows "[M-]" while
+    // it's true.
     bool meta_pending() const { return pending_meta_; }
 
     // Wired up by StackCalcFrame after the splitter creates both panes.
@@ -128,6 +126,12 @@ public:
     // Public so the frame-level char hook can dispatch into them.
     void on_key_down(wxKeyEvent& e);
     void on_char(wxKeyEvent& e);
+
+    // Push the mode line + flag indicators into the frame's
+    // wxStatusBar. Called from redraw() and from the Esc-as-meta
+    // toggle paths (since pending_meta_ also feeds the indicator
+    // string), and once from the frame's ctor for the initial fill.
+    void update_status_bar();
 
 private:
     void on_blink_tick(wxTimerEvent& e);
@@ -177,8 +181,7 @@ private:
     bool              pending_meta_ = false;   // Esc-as-meta one-shot flag
     TopBar*               top_bar_   = nullptr;
     wxDataViewListCtrl*   stack_ctrl_ = nullptr;
-    ModeBar*              mode_bar_  = nullptr;
-    TrailPanel*       trail_panel_ = nullptr;  // owned by the frame
+    TrailPanel*           trail_panel_ = nullptr;  // owned by the frame
 };
 
 // Custom-painted top subpanel: error/info message (when present) and
@@ -187,18 +190,6 @@ private:
 class TopBar : public wxPanel {
 public:
     TopBar(wxWindow* parent, CalcPanel* host);
-    int desired_height() const { return desired_height_; }
-private:
-    void on_paint(wxPaintEvent& e);
-    CalcPanel* host_;
-    int        desired_height_ = 0;
-};
-
-// Custom-painted bottom subpanel: mode line + flag/pending-prefix
-// indicators. One row tall.
-class ModeBar : public wxPanel {
-public:
-    ModeBar(wxWindow* parent, CalcPanel* host);
     int desired_height() const { return desired_height_; }
 private:
     void on_paint(wxPaintEvent& e);

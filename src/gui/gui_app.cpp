@@ -22,7 +22,6 @@ static const wxColour kLabelColor    (128, 128, 128);
 static const wxColour kValueColor    (255, 255, 255);
 static const wxColour kMarkerColor   (128, 128, 128);
 static const wxColour kEntryColor    (102, 255, 102);
-static const wxColour kModeColor     (102, 204, 255);
 static const wxColour kFlagColor     (255, 255, 102);
 static const wxColour kErrorColor    (255, 77, 77);
 
@@ -202,12 +201,27 @@ StackCalcFrame::StackCalcFrame()
     SetSizer(sizer);
 
     build_menus();
+
+    // Status bar at the bottom of the frame: field 0 (proportional)
+    // shows the mode line ("12 Deg"), field 1 (proportional, narrower)
+    // shows flag indicators ([I][H][K][d-][M-]). CalcPanel pushes
+    // the text via update_status_bar() on every refresh.
+    {
+        auto* sb = CreateStatusBar(2);
+        const int widths[] = { -3, -1 };  // 3:1 split
+        sb->SetStatusWidths(2, widths);
+    }
+
     // Focus has to be set after the frame is shown — on Windows, SetFocus
     // before Show() is silently ignored and the OS picks its own default
     // child (often the splitter), leaving keystrokes nowhere to land.
     // CallAfter defers until the event loop is running and the frame is
     // realized.
     CallAfter([this] { panel_->focus_calc(); });
+
+    // Push the initial mode/flags into the status bar now that both
+    // the bar and the panel exist.
+    panel_->update_status_bar();
 
     // Try to restore saved session. If we got a window size and sash from
     // the saved state, use those; otherwise fall back to centering and a
@@ -679,13 +693,13 @@ CalcPanel::CalcPanel(wxWindow* parent)
     stack_ctrl_->AppendTextColumn(wxEmptyString, wxDATAVIEW_CELL_INERT,
         -1, wxALIGN_LEFT, wxDATAVIEW_COL_RESIZABLE);
 
-    // Bottom: custom-painted mode line.
-    mode_bar_ = new ModeBar(this, this);
+    // Mode line + flag indicators live on the frame's wxStatusBar
+    // (created in StackCalcFrame's ctor); no panel-level child
+    // widget for them anymore.
 
     auto* sizer = new wxBoxSizer(wxVERTICAL);
     sizer->Add(top_bar_,    0, wxEXPAND);
     sizer->Add(stack_ctrl_, 1, wxEXPAND);
-    sizer->Add(mode_bar_,   0, wxEXPAND);
     SetSizer(sizer);
 
     // Calculator key handling. Bind on the panel itself, AND on the
@@ -754,7 +768,7 @@ void CalcPanel::dispatch_key(const sc::KeyEvent& k) {
     // meta is pending shouldn't silently mutate the dispatched key.
     // Clear the pending state so the user isn't stuck in meta mode
     // after taking a menu action.
-    if (pending_meta_) { pending_meta_ = false; mode_bar_->Refresh(); }
+    if (pending_meta_) { pending_meta_ = false; update_status_bar(); }
     submit_work([this, k]{
         try { ctrl_.process_key(k); }
         catch (...) { /* controller absorbs std::exception */ }
@@ -764,7 +778,7 @@ void CalcPanel::dispatch_key(const sc::KeyEvent& k) {
 void CalcPanel::dispatch_with_meta(sc::KeyEvent k) {
     if (pending_meta_) {
         pending_meta_ = false;
-        mode_bar_->Refresh();
+        update_status_bar();
         // Promote to M-prefixed form. Already-Modified events fall
         // through unchanged (no double-meta).
         if (k.type == sc::KeyEvent::Char) {
@@ -889,8 +903,31 @@ void CalcPanel::redraw() {
 
     update_stack();
     top_bar_->Refresh();
-    mode_bar_->Refresh();
+    update_status_bar();
     if (trail_panel_) trail_panel_->refresh_from_state();
+}
+
+void CalcPanel::update_status_bar() {
+    auto* frame = wxGetTopLevelParent(this);
+    if (!frame) return;
+    auto* sb = static_cast<wxFrame*>(frame)->GetStatusBar();
+    if (!sb) return;
+
+    const auto& ds = cached_display_;
+
+    // Field 0: mode line ("12 Deg", "12 Rad", etc.)
+    sb->SetStatusText(wxString::FromUTF8(ds.mode_line.c_str()), 0);
+
+    // Field 1: flag indicators in [bracket] form. Includes the
+    // GUI-side meta-prefix indicator (Esc-as-meta one-shot, separate
+    // from the controller's pending_prefix) at the end.
+    std::string flags;
+    if (ds.inverse_flag)            flags += " [I]";
+    if (ds.hyperbolic_flag)         flags += " [H]";
+    if (ds.keep_args_flag)          flags += " [K]";
+    if (!ds.pending_prefix.empty()) flags += " [" + ds.pending_prefix + "-]";
+    if (pending_meta_)              flags += " [M-]";
+    sb->SetStatusText(wxString::FromUTF8(flags.c_str()), 1);
 }
 
 void CalcPanel::on_blink_tick(wxTimerEvent&) {
@@ -1010,64 +1047,6 @@ void TopBar::on_paint(wxPaintEvent&) {
     dc.DrawLine(0, sep_y, size.GetWidth(), sep_y);
 }
 
-// === ModeBar: custom-painted bottom region (mode line + flags) ===============
-
-ModeBar::ModeBar(wxWindow* parent, CalcPanel* host)
-    : wxPanel(parent, wxID_ANY, wxDefaultPosition, wxDefaultSize,
-              wxFULL_REPAINT_ON_RESIZE)
-    , host_(host)
-{
-    SetBackgroundStyle(wxBG_STYLE_PAINT);
-    SetBackgroundColour(kBgColor);
-
-    wxClientDC dc(this);
-    dc.SetFont(host_->mono_font());
-    int line_h = dc.GetCharHeight();
-    int pad = FromDIP(4);
-    int sep_gap = FromDIP(3);
-    desired_height_ = sep_gap + pad + line_h + pad;
-    SetMinSize(wxSize(-1, desired_height_));
-
-    Bind(wxEVT_PAINT, &ModeBar::on_paint, this);
-}
-
-void ModeBar::on_paint(wxPaintEvent&) {
-    wxAutoBufferedPaintDC dc(this);
-    dc.SetFont(host_->mono_font());
-    dc.SetBackground(wxBrush(kBgColor));
-    dc.Clear();
-
-    const auto& ds = host_->display_cache();
-    wxSize size = GetClientSize();
-    int line_h = dc.GetCharHeight();
-    int padding = FromDIP(4);
-    int sep_gap = FromDIP(3);
-
-    // Separator above the mode line (anchors the stack visually).
-    dc.SetPen(wxPen(kSeparatorColor));
-    dc.DrawLine(0, sep_gap / 2, size.GetWidth(), sep_gap / 2);
-
-    int mode_y = size.GetHeight() - line_h - padding;
-    dc.SetTextForeground(kModeColor);
-    dc.DrawText(ds.mode_line, padding, mode_y);
-    wxCoord mode_w, mode_h;
-    dc.GetTextExtent(ds.mode_line, &mode_w, &mode_h);
-
-    std::string flags;
-    if (ds.inverse_flag)    flags += " [I]";
-    if (ds.hyperbolic_flag) flags += " [H]";
-    if (ds.keep_args_flag)  flags += " [K]";
-    if (!ds.pending_prefix.empty()) flags += " [" + ds.pending_prefix + "-]";
-    // GUI-side meta-prefix indicator. pending_meta_ is a CalcPanel
-    // flag (Esc-as-meta one-shot), separate from the controller's
-    // pending_prefix.
-    if (host_->meta_pending())      flags += " [M-]";
-    if (!flags.empty()) {
-        dc.SetTextForeground(kFlagColor);
-        dc.DrawText(flags, padding + mode_w, mode_y);
-    }
-}
-
 void CalcPanel::on_char(wxKeyEvent& e) {
     int uc = e.GetUnicodeKey();
     if (uc == WXK_NONE || uc < 0x20 || uc >= 0x7f) return;  // ignore controls
@@ -1127,7 +1106,7 @@ void CalcPanel::on_key_down(wxKeyEvent& e) {
             // "drop top of stack" depending on whether entry is
             // active. Both go through the runner; meta-prefix
             // doesn't apply to either.
-            if (pending_meta_) { pending_meta_ = false; mode_bar_->Refresh(); }
+            if (pending_meta_) { pending_meta_ = false; update_status_bar(); }
             submit_work([this]{
                 if (!ctrl_.process_key(sc::KeyEvent::character('\b')))
                     ctrl_.process_key(sc::KeyEvent::special("DEL"));
@@ -1159,7 +1138,7 @@ void CalcPanel::on_key_down(wxKeyEvent& e) {
                 });
             } else {
                 pending_meta_ = !pending_meta_;
-                mode_bar_->Refresh();
+                update_status_bar();
             }
             break;
         default:
