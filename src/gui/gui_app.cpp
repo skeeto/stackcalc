@@ -681,12 +681,19 @@ CalcPanel::CalcPanel(wxWindow* parent)
     // doesn't retroactively update existing cells.
     stack_ctrl_->SetFont(mono_font_);
 
-    // Two columns: right-aligned fixed-width index, left-aligned
-    // stretching value. CELL_INERT = read-only, no inline editing.
+    // Two columns: right-aligned fixed-width index (CELL_INERT —
+    // never editable, never selectable into the cell), left-aligned
+    // stretching value (CELL_EDITABLE — double-click pops up the
+    // native in-place editor with the full value text, the user can
+    // drag-select any substring and Cmd+C / Ctrl+C copies it; we
+    // veto the edit on commit so the actual stack value is never
+    // changed by this affordance — see on_dataview_edit_done below).
     stack_ctrl_->AppendTextColumn(wxEmptyString, wxDATAVIEW_CELL_INERT,
         FromDIP(56), wxALIGN_RIGHT, 0);
-    stack_ctrl_->AppendTextColumn(wxEmptyString, wxDATAVIEW_CELL_INERT,
+    stack_ctrl_->AppendTextColumn(wxEmptyString, wxDATAVIEW_CELL_EDITABLE,
         -1, wxALIGN_LEFT, wxDATAVIEW_COL_RESIZABLE);
+    stack_ctrl_->Bind(wxEVT_DATAVIEW_ITEM_EDITING_DONE,
+                      &CalcPanel::on_dataview_edit_done, this);
 
     // Mode line + flag indicators live on the frame's wxStatusBar
     // (created in StackCalcFrame's ctor); no panel-level child
@@ -1118,6 +1125,15 @@ void CalcPanel::on_stack_copy(wxCommandEvent&) {
     }
 }
 
+void CalcPanel::on_dataview_edit_done(wxDataViewEvent& e) {
+    // The CELL_EDITABLE columns on stack_ctrl_ and trail_panel_
+    // exist purely so the user can pop up the native in-place
+    // editor over a value cell, drag-select a substring inside it,
+    // and Cmd+C to copy. The actual stack/trail isn't editable from
+    // the GUI — vetoing the commit reverts whatever the user typed.
+    e.Veto();
+}
+
 // === TrailPanel: right-pane trail viewer =====================================
 
 TrailPanel::TrailPanel(wxWindow* parent, CalcPanel* host)
@@ -1139,13 +1155,16 @@ TrailPanel::TrailPanel(wxWindow* parent, CalcPanel* host)
     // the control's font at AppendTextColumn time).
     SetFont(host->mono_font());
 
-    // Two columns: tag (operation name like "add", "neg" — fixed
-    // width) and value (formatted result — stretches). Empty tag
-    // leaves the column blank.
+    // Two columns: tag (operation name — fixed width, INERT) and
+    // value (formatted result — stretches, EDITABLE for substring-
+    // copy via the native in-place editor; commits are vetoed —
+    // see CalcPanel::on_dataview_edit_done).
     AppendTextColumn(wxEmptyString, wxDATAVIEW_CELL_INERT,
                      FromDIP(72), wxALIGN_LEFT, 0);
-    AppendTextColumn(wxEmptyString, wxDATAVIEW_CELL_INERT,
+    AppendTextColumn(wxEmptyString, wxDATAVIEW_CELL_EDITABLE,
                      -1, wxALIGN_LEFT, wxDATAVIEW_COL_RESIZABLE);
+    Bind(wxEVT_DATAVIEW_ITEM_EDITING_DONE,
+         &CalcPanel::on_dataview_edit_done, host_);
 
     // Forward keystrokes to the calculator so typing still works
     // while the trail widget has focus from click-to-select. Frame

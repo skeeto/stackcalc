@@ -132,6 +132,14 @@ public:
     // string), and once from the frame's ctor for the initial fill.
     void update_status_bar();
 
+    // Handler for wxEVT_DATAVIEW_ITEM_EDITING_DONE on stack/trail
+    // value columns. We use CELL_EDITABLE not for actual editing but
+    // to give users a native in-place text editor over the cell so
+    // they can drag-select substrings and Cmd+C copy them — vetoing
+    // the commit here keeps the underlying value unchanged. Public
+    // so TrailPanel's ctor can bind it on `host_`.
+    void on_dataview_edit_done(wxDataViewEvent& e);
+
 private:
     void on_blink_tick(wxTimerEvent& e);
     void on_overlay_tick(wxTimerEvent& e);
