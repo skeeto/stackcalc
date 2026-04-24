@@ -6,7 +6,6 @@ target_link_libraries(stackcalc PRIVATE
     stackcalc-controller
     wx::core
     wx::base
-    wx::richtext
 )
 
 # Statically link libstdc++ / libgcc / winpthreads on mingw so the

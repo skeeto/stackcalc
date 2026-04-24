@@ -4,7 +4,6 @@
 #include <wx/timer.h>
 #include <wx/splitter.h>
 #include <wx/dataview.h>
-#include <wx/richtext/richtextctrl.h>  // still needed by TrailPanel
 #include <atomic>
 #include <functional>
 #include <memory>
@@ -14,7 +13,6 @@
 
 class CalcPanel;
 class TrailPanel;
-class TopBar;
 
 // Main application class
 class StackCalcApp : public wxApp {
@@ -32,10 +30,11 @@ public:
     void on_about(wxCommandEvent& e);
 
     // Frame-level keystroke hook: catches special keys (Enter, Tab, Back,
-    // Del, Esc, Alt-modified) so the wxRichTextCtrl doesn't swallow them
-    // when it has focus from a click-to-select. Printable characters are
-    // intentionally skipped here and routed via the panel's wxEVT_CHAR
-    // bindings, where unicode translation is reliable.
+    // Del, Esc, Alt-modified) so the focused DataView widget doesn't
+    // swallow them for navigation/activation when it has focus from a
+    // click-to-select. Printable characters are intentionally skipped
+    // here and routed via the panel's wxEVT_CHAR bindings, where
+    // unicode translation is reliable.
     void on_char_hook(wxKeyEvent& e);
 
     // Single dispatcher for every menu item that just feeds keystrokes
@@ -63,9 +62,11 @@ private:
 };
 
 // Hosts the calculator display, top to bottom:
-//   TopBar              custom-painted: message + "." marker + entry line
-//   wxDataViewListCtrl  selectable stack — top of stack at the TOP,
-//                       growing downward (1: just below entry, 2:, …)
+//   message_text_       wxStaticText (red, hidden when no message)
+//   entry_text_         wxStaticText (mono, shows the in-progress
+//                       number-entry buffer)
+//   stack_ctrl_         wxDataViewListCtrl, selectable, top of stack
+//                       at row 0, growing downward (1: 2: 3: ...)
 // Mode line and flag indicators live on the frame's wxStatusBar.
 class CalcPanel : public wxPanel {
 public:
@@ -73,8 +74,6 @@ public:
     ~CalcPanel();
 
     sc::Controller& controller() { return ctrl_; }
-    TopBar*  top_bar()  { return top_bar_; }
-    bool cursor_visible() const { return cursor_visible_; }
     const wxFont& mono_font() const { return mono_font_; }
 
     // Cached display snapshot — paint code reads from here instead of
@@ -173,38 +172,29 @@ private:
     sc::CalcRunner    runner_;
     sc::DisplayState  cached_display_;
     wxFont            mono_font_;
-    wxTimer           blink_timer_;
     wxTimer           overlay_timer_;          // delays "Computing…" overlay
-    bool              cursor_visible_ = true;
     bool              busy_ = false;           // a job is in flight
     bool              computing_overlay_visible_ = false;
     bool              pending_meta_ = false;   // Esc-as-meta one-shot flag
-    TopBar*               top_bar_   = nullptr;
-    wxDataViewListCtrl*   stack_ctrl_ = nullptr;
-    TrailPanel*           trail_panel_ = nullptr;  // owned by the frame
+    wxStaticText*         message_text_ = nullptr;  // red, hidden when empty
+    wxStaticText*         entry_text_   = nullptr;  // mono entry buffer display
+    wxDataViewListCtrl*   stack_ctrl_   = nullptr;
+    TrailPanel*           trail_panel_  = nullptr;  // owned by the frame
 };
 
-// Custom-painted top subpanel: error/info message (when present) and
-// the "." marker + blinking entry line. Two rows tall (height fixed
-// for stable layout).
-class TopBar : public wxPanel {
-public:
-    TopBar(wxWindow* parent, CalcPanel* host);
-    int desired_height() const { return desired_height_; }
-private:
-    void on_paint(wxPaintEvent& e);
-    CalcPanel* host_;
-    int        desired_height_ = 0;
-};
-
-// Right-pane trail viewer: native rich-text widget showing every trail
-// entry with a marker on the entry at the trail pointer.
-class TrailPanel : public wxRichTextCtrl {
+// Right-pane trail viewer: native list control showing every trail
+// entry as (tag, value) rows; the row at the trail pointer is
+// rendered yellow via the shared MarkedListStore mechanism.
+class TrailPanel : public wxDataViewListCtrl {
 public:
     TrailPanel(wxWindow* parent, CalcPanel* host);
 
-    // Rebuild the displayed text from the controller's trail.
+    // Rebuild the displayed rows from the controller's trail.
     void refresh_from_state();
+
+    // Cmd/Ctrl+C handler: copy the values of selected trail rows
+    // (just the values, one per line) to the clipboard.
+    void on_trail_copy(wxCommandEvent& e);
 
 private:
     CalcPanel* host_;
