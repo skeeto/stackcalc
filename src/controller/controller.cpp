@@ -891,10 +891,9 @@ DisplayState Controller::display() const {
     // Trail
     for (int i = 0; i < (int)stack_.trail().size(); ++i) {
         auto& entry = stack_.trail().at(i);
-        // Empty tag (e.g. plain number entry) renders as just the value.
-        ds.trail_entries.push_back(entry.tag.empty()
-            ? fmt.format(entry.value)
-            : entry.tag + ": " + fmt.format(entry.value));
+        // Empty tag (e.g. plain number entry) leaves the tag column
+        // blank; the GUI shows tag in one column and value in another.
+        ds.trail_entries.push_back({entry.tag, fmt.format(entry.value)});
     }
     ds.trail_pointer = stack_.trail().empty()
         ? -1

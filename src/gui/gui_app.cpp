@@ -14,18 +14,24 @@
 #include <string>
 
 // Two color constants survive the native-widget migration:
-//   kFlagColor  — yellow, used for placeholder rows in stack/trail
-//                 (via MarkedListStore) and the "Computing…" overlay
-//                 row. Distinguishes "not an actual number" output.
-//   kErrorColor — red, used for the message line (wxStaticText
-//                 foreground when a calculator error is set).
+//   kAccentColor — dark amber, used for placeholder rows in stack/
+//                  trail (via MarkedListStore), the "Computing…"
+//                  overlay row, and the trail-pointer row.
+//                  Distinguishes "not an actual number" output and
+//                  "current entry" highlighting. Chosen to read
+//                  against both light (white) and dark backgrounds —
+//                  pure yellow is unreadable on white. Combined with
+//                  Bold for extra emphasis.
+//   kErrorColor  — red, used for the message line (wxStaticText
+//                  foreground when a calculator error is set). Reads
+//                  on both light and dark backgrounds.
 // Everything else (kBgColor / kSeparatorColor / kLabelColor /
-// kValueColor / kMarkerColor / kEntryColor / kModeColor) was a
-// dark-theme override of platform defaults; with native widgets
-// throughout, the platform handles light/dark mode and selection
-// state correctly without us telling it anything.
-static const wxColour kFlagColor (255, 255, 102);
-static const wxColour kErrorColor(255,  77,  77);
+// kValueColor / kMarkerColor / kEntryColor / kModeColor / the old
+// kFlagColor yellow) was a dark-theme override of platform defaults;
+// with native widgets throughout, the platform handles light/dark
+// mode and selection state correctly without us telling it.
+static const wxColour kAccentColor(204, 102,   0);  // dark amber
+static const wxColour kErrorColor (200,  40,  40);  // dark red
 
 // Custom store for the stack and trail widgets. wxDataViewListCtrl's
 // built-in store doesn't expose per-row attributes, but we want some
@@ -40,9 +46,10 @@ public:
     bool GetAttrByRow(unsigned int row, unsigned int /*col*/,
                       wxDataViewItemAttr& attr) const override {
         if (row >= m_data.size()) return false;
-        // 1 = "render in flag color"; 0 (default) = platform default.
+        // 1 = "render with accent + bold"; 0 = platform default.
         if (m_data[row]->GetData() == 1) {
-            attr.SetColour(kFlagColor);
+            attr.SetColour(kAccentColor);
+            attr.SetBold(true);
             return true;
         }
         return false;
@@ -147,9 +154,14 @@ StackCalcFrame::StackCalcFrame()
 #endif
 
     // Splitter hosts the calculator on the left and the trail on the right.
+    // wxSP_3D gives a visible native sash on every platform —
+    // wxSP_THIN_SASH renders the sash as a 1-pixel hairline that's
+    // technically draggable but invisible (especially on macOS
+    // NSSplitView with light-mode backgrounds). Live update so the
+    // panes resize while dragging.
     splitter_ = new wxSplitterWindow(
         this, wxID_ANY, wxDefaultPosition, wxDefaultSize,
-        wxSP_LIVE_UPDATE | wxSP_THIN_SASH | wxBORDER_NONE);
+        wxSP_LIVE_UPDATE | wxSP_3D | wxBORDER_NONE);
     splitter_->SetMinimumPaneSize(FromDIP(150));
     splitter_->SetSashGravity(0.5);  // share resize equally between calc and trail
 
@@ -628,9 +640,18 @@ CalcPanel::CalcPanel(wxWindow* parent)
     // in-progress number-entry buffer and is otherwise empty. No
     // hand-painted blinking cursor anymore — the text appearing as
     // the user types IS the visual cue that input is being captured.
+    // Reserve a single line of vertical space for the message even
+    // when no message is showing — otherwise transient notifications
+    // ("Probably prime", "Cancelled — operation undone") push the
+    // stack down whenever they appear and pull it back up when they
+    // clear, which is disorienting. Set the min size from the GUI
+    // font's line height once at construction.
     message_text_ = new wxStaticText(this, wxID_ANY, wxEmptyString);
     message_text_->SetForegroundColour(kErrorColor);
-    message_text_->Hide();
+    {
+        wxClientDC dc(this);
+        message_text_->SetMinSize(wxSize(-1, dc.GetCharHeight()));
+    }
 
     entry_text_ = new wxStaticText(this, wxID_ANY, wxEmptyString);
     entry_text_->SetFont(mono_font_);
@@ -865,18 +886,12 @@ void CalcPanel::focus_calc() {
 }
 
 void CalcPanel::redraw() {
-    // Message line: hidden when there's nothing to show; layout
-    // recalculated so the entry/stack reflow into the freed space.
+    // Message line: always laid out at one line tall (the min size is
+    // set in the ctor). Just update the text — empty string when
+    // there's no message — so transient notifications appear in
+    // place without reflowing the rest of the panel.
     const auto& ds = cached_display_;
-    bool had_msg = message_text_->IsShown();
-    bool has_msg = !ds.message.empty();
-    if (has_msg) {
-        message_text_->SetLabel(wxString::FromUTF8(ds.message.c_str()));
-    }
-    if (has_msg != had_msg) {
-        message_text_->Show(has_msg);
-        Layout();
-    }
+    message_text_->SetLabel(wxString::FromUTF8(ds.message.c_str()));
 
     // Entry line: shows the in-progress number-entry buffer (e.g.
     // "127" while typing). Empty when nothing is being entered.
@@ -1124,6 +1139,11 @@ TrailPanel::TrailPanel(wxWindow* parent, CalcPanel* host)
     // the control's font at AppendTextColumn time).
     SetFont(host->mono_font());
 
+    // Two columns: tag (operation name like "add", "neg" — fixed
+    // width) and value (formatted result — stretches). Empty tag
+    // leaves the column blank.
+    AppendTextColumn(wxEmptyString, wxDATAVIEW_CELL_INERT,
+                     FromDIP(72), wxALIGN_LEFT, 0);
     AppendTextColumn(wxEmptyString, wxDATAVIEW_CELL_INERT,
                      -1, wxALIGN_LEFT, wxDATAVIEW_COL_RESIZABLE);
 
@@ -1133,8 +1153,8 @@ TrailPanel::TrailPanel(wxWindow* parent, CalcPanel* host)
     Bind(wxEVT_KEY_DOWN, &CalcPanel::on_key_down, host_);
     Bind(wxEVT_CHAR,     &CalcPanel::on_char,     host_);
 
-    // Cmd/Ctrl+C: copy selected trail entries (each full "tag:
-    // value" string, one per line) to the clipboard. Same accelerator
+    // Cmd/Ctrl+C: copy selected trail entries (formatted "tag:
+    // value", one per line) to the clipboard. Same accelerator
     // pattern as the stack widget.
     Bind(wxEVT_MENU, &TrailPanel::on_trail_copy, this, wxID_COPY);
     {
@@ -1155,10 +1175,11 @@ void TrailPanel::refresh_from_state() {
     int n = static_cast<int>(ds.trail_entries.size());
     int ptr = ds.trail_pointer;
     for (int i = 0; i < n; ++i) {
+        const auto& entry = ds.trail_entries[i];
         wxVector<wxVariant> row;
-        row.push_back(wxVariant(
-            wxString::FromUTF8(ds.trail_entries[i].c_str())));
-        // marker=1 → MarkedListStore renders the row in flag color.
+        row.push_back(wxVariant(wxString::FromUTF8(entry.tag.c_str())));
+        row.push_back(wxVariant(wxString::FromUTF8(entry.value.c_str())));
+        // marker=1 → MarkedListStore renders the row in accent + bold.
         AppendItem(row, /*data=*/(i == ptr) ? 1 : 0);
     }
 
@@ -1182,10 +1203,16 @@ void TrailPanel::on_trail_copy(wxCommandEvent&) {
     for (const auto& item : sel) rows.push_back(ItemToRow(item));
     std::sort(rows.begin(), rows.end());
 
+    // Reproduce the old single-string "tag: value" format on copy
+    // (or just value when tag is empty), regardless of column
+    // layout. This is what most users want when pasting trail
+    // entries elsewhere — the bare value alone loses the context.
     wxString text;
     for (size_t i = 0; i < rows.size(); ++i) {
         if (i) text += wxT("\n");
-        text += GetTextValue(rows[i], 0);
+        wxString tag   = GetTextValue(rows[i], 0);
+        wxString value = GetTextValue(rows[i], 1);
+        text += tag.IsEmpty() ? value : (tag + wxT(": ") + value);
     }
     if (wxTheClipboard->Open()) {
         wxTheClipboard->SetData(new wxTextDataObject(text));

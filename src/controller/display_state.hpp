@@ -7,6 +7,16 @@
 
 namespace sc {
 
+// One trail row in the display snapshot: an operation tag (e.g.
+// "add", "neg", possibly empty for plain number entry) and the
+// formatted result value. Distinct from sc::TrailEntry in
+// src/calc/trail.hpp, which holds the unformatted ValuePtr.
+struct TrailRow {
+    std::string tag;
+    std::string value;
+    bool operator==(const TrailRow&) const = default;
+};
+
 // Read-only snapshot of the calculator's display state.
 // A GUI/TUI reads this to render.
 struct DisplayState {
@@ -19,8 +29,8 @@ struct DisplayState {
     // Mode line: e.g. "12 Deg"
     std::string mode_line;
 
-    // Trail entries (formatted)
-    std::vector<std::string> trail_entries;
+    // Trail entries (split into tag + formatted value).
+    std::vector<TrailRow> trail_entries;
 
     // Index into trail_entries marked by the pointer (for yank/navigation),
     // or -1 if the trail is empty.
