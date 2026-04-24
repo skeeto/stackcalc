@@ -1,12 +1,16 @@
 #include "gui_app.hpp"
 #include "persistence.hpp"
 #include "version.hpp"
+#include <wx/accel.h>
 #include <wx/caret.h>
+#include <wx/clipbrd.h>
+#include <wx/dataobj.h>
 #include <wx/dcbuffer.h>
 #include <wx/file.h>
 #include <wx/filename.h>
 #include <wx/fontenum.h>
 #include <wx/stdpaths.h>
+#include <algorithm>
 #include <cstdio>
 #include <sstream>
 #include <string>
@@ -28,8 +32,9 @@ static const wxColour kErrorColor    (255, 77, 77);
 // on the floor. Cap the per-entry render length — anything past this
 // is unreadable anyway. The full value is still on the stack and any
 // subsequent operator sees the real number; this is purely a
-// render-side guard. Applied at every WriteText call site that takes
-// a stack-derived value (stack widget AND trail widget).
+// render-side guard. Used by TrailPanel::refresh_from_state. (The
+// stack widget moved to wxDataViewListCtrl, which renders cells
+// lazily and doesn't need this guard.)
 static constexpr size_t kMaxEntryRender = 8192;
 
 static void write_value_capped(wxRichTextCtrl* ctrl, const std::string& s,
@@ -56,6 +61,28 @@ static void write_value_capped(wxRichTextCtrl* ctrl, const std::string& s,
         ctrl->EndTextColour();
     }
 }
+
+// Custom store for the stack widget. wxDataViewListCtrl's built-in
+// store doesn't expose per-row attributes, but we want some rows
+// (formatter-emitted "<integer: N digits>" placeholders, the
+// "Computing…" overlay row) rendered in flag color rather than the
+// platform default text color. Subclass and override GetAttrByRow,
+// keying on the row's wxUIntPtr data slot — which AppendItem(row,
+// data) and GetItemData(item) already manage as part of the store's
+// public API.
+class StackListStore : public wxDataViewListStore {
+public:
+    bool GetAttrByRow(unsigned int row, unsigned int /*col*/,
+                      wxDataViewItemAttr& attr) const override {
+        if (row >= m_data.size()) return false;
+        // 1 = "render in flag color"; 0 (default) = platform default.
+        if (m_data[row]->GetData() == 1) {
+            attr.SetColour(kFlagColor);
+            return true;
+        }
+        return false;
+    }
+};
 
 // === Session persistence (per-platform user data dir) ========================
 
@@ -620,20 +647,34 @@ CalcPanel::CalcPanel(wxWindow* parent)
     // Top: custom-painted area for message + entry line.
     top_bar_ = new TopBar(this, this);
 
-    // Middle: native rich-text widget for the stack — selectable + Ctrl+C.
-    stack_ctrl_ = new wxRichTextCtrl(
-        this, wxID_ANY, wxEmptyString,
-        wxDefaultPosition, wxDefaultSize,
-        wxRE_READONLY | wxRE_MULTILINE | wxBORDER_NONE);
+    // Middle: native list view for the stack. Two columns (index,
+    // value), platform-default look (NSTableView on macOS, ListView
+    // on Windows, GtkTreeView on Linux), native row-based selection
+    // and copy.
+    stack_ctrl_ = new wxDataViewListCtrl(
+        this, wxID_ANY, wxDefaultPosition, wxDefaultSize,
+        wxDV_MULTIPLE | wxDV_ROW_LINES | wxDV_NO_HEADER | wxBORDER_NONE);
+
+    // Swap in our custom store BEFORE adding columns. AssociateModel
+    // transfers ownership through wx refcounting; the built-in store
+    // installed by wxDataViewListCtrl's ctor is DecRef'd and
+    // destroyed.
+    {
+        auto* store = new StackListStore();
+        stack_ctrl_->AssociateModel(store);
+        store->DecRef();
+    }
+
+    // Two columns: right-aligned fixed-width index, left-aligned
+    // stretching value. CELL_INERT = read-only, no inline editing.
+    stack_ctrl_->AppendTextColumn(wxEmptyString, wxDATAVIEW_CELL_INERT,
+        FromDIP(56), wxALIGN_RIGHT, 0);
+    stack_ctrl_->AppendTextColumn(wxEmptyString, wxDATAVIEW_CELL_INERT,
+        -1, wxALIGN_LEFT, wxDATAVIEW_COL_RESIZABLE);
+
+    // Monospace font for digit alignment. On Cocoa this is the only
+    // font knob (applies to all cells, which is what we want).
     stack_ctrl_->SetFont(mono_font_);
-    stack_ctrl_->SetBackgroundColour(kBgColor);
-    stack_ctrl_->SetForegroundColour(kValueColor);
-    stack_ctrl_->SetEditable(false);
-    // (Tried installing a hidden wxCaret here to suppress the dark
-    // caret on macOS, but it caused a reactivation crash on Cmd+Tab
-    // back into the app — wxRichTextCtrl draws its own caret and
-    // doesn't tolerate a foreign zero-size wxCaret being substituted.
-    // Live with the visual quirk for now.)
 
     // Bottom: custom-painted mode line.
     mode_bar_ = new ModeBar(this, this);
@@ -645,11 +686,11 @@ CalcPanel::CalcPanel(wxWindow* parent)
     SetSizer(sizer);
 
     // Calculator key handling. Bind on the panel itself, AND on the
-    // stack widget — when the user clicks into the stack to start a
-    // selection, focus stays there, but subsequent typing still needs
-    // to reach the calculator. on_key_down skips unhandled keys, so the
-    // rich text widget's defaults (Ctrl+A, Ctrl+C, arrow keys, etc.)
-    // still work for selection.
+    // stack widget — when the user clicks into the stack to make a
+    // row selection, focus stays there, but subsequent typing still
+    // needs to reach the calculator. The frame's CHAR_HOOK
+    // intercepts special keys (RET / TAB / etc.) before DataView can
+    // consume them for navigation/activation.
     Bind(wxEVT_KEY_DOWN, &CalcPanel::on_key_down,   this);
     Bind(wxEVT_CHAR,     &CalcPanel::on_char,       this);
     // Two timers with distinct IDs so we can dispatch each separately.
@@ -661,6 +702,17 @@ CalcPanel::CalcPanel(wxWindow* parent)
     Bind(wxEVT_TIMER, &CalcPanel::on_overlay_tick, this, kOverlayTimerId);
     stack_ctrl_->Bind(wxEVT_KEY_DOWN, &CalcPanel::on_key_down, this);
     stack_ctrl_->Bind(wxEVT_CHAR,     &CalcPanel::on_char,     this);
+
+    // Cmd/Ctrl+C: copy selected stack values (just the values, one
+    // per line) to the clipboard. wxACCEL_CTRL maps to Cmd on macOS.
+    // wxDataViewCtrl handles Cmd+A (select all) natively.
+    stack_ctrl_->Bind(wxEVT_MENU, &CalcPanel::on_stack_copy,
+                      this, wxID_COPY);
+    {
+        wxAcceleratorEntry copy_entry(wxACCEL_CTRL, (int)'C', wxID_COPY);
+        wxAcceleratorTable copy_accel(1, &copy_entry);
+        stack_ctrl_->SetAcceleratorTable(copy_accel);
+    }
 
     // Initial display snapshot so paint code has something to read
     // before the first command runs.
@@ -846,46 +898,49 @@ void CalcPanel::on_blink_tick(wxTimerEvent&) {
 
 void CalcPanel::update_stack() {
     stack_ctrl_->Freeze();
-    stack_ctrl_->Clear();
+    stack_ctrl_->DeleteAllItems();
 
     if (computing_overlay_visible_) {
-        // Replace the stack contents with a "Computing…" message while
-        // a long calculation is running, so the user has visual
-        // feedback that input is being held. The previous stack
-        // contents are restored when refresh_cache_and_redraw fires.
-        stack_ctrl_->BeginTextColour(kFlagColor);
-        stack_ctrl_->WriteText(wxT("\n  Computing…  (Ctrl+G to cancel)"));
-        stack_ctrl_->EndTextColour();
+        // While a long calculation is running, replace the stack
+        // contents with a single yellow "Computing…" row so the
+        // user has visual feedback that input is being held.
+        // Restored when refresh_cache_and_redraw fires.
+        wxVector<wxVariant> row;
+        row.push_back(wxVariant(wxString()));
+        row.push_back(wxVariant(
+            wxString(wxT("Computing…  (Ctrl+G to cancel)"))));
+        stack_ctrl_->AppendItem(row, /*data=*/1);  // 1 = render yellow
     } else {
-        // Top-of-stack rendered at the TOP of the widget, growing downward.
+        // Top-of-stack rendered at the TOP of the widget, growing
+        // downward. cached_display_.stack_entries[back()] is the top;
+        // iterate in reverse so row 0 = top of stack.
         const auto& entries = cached_display_.stack_entries;
         int n = static_cast<int>(entries.size());
 
         for (int j = 0; j < n; ++j) {
-            int idx = n - 1 - j;        // entry index in stack_entries
-            int label = j + 1;          // 1 = top of stack
+            int idx = n - 1 - j;
+            int label = j + 1;
+            const std::string& s = entries[idx];
 
-            stack_ctrl_->BeginTextColour(kLabelColor);
-            stack_ctrl_->WriteText(wxString::Format("%3d:  ", label));
-            stack_ctrl_->EndTextColour();
+            // Yellow attribute when the formatter emitted a placeholder
+            // ("<integer: N digits>"). Real values never start with '<'.
+            wxUIntPtr marker =
+                (!s.empty() && s.front() == '<' && s.back() == '>') ? 1 : 0;
 
-            write_value_capped(stack_ctrl_, entries[idx]);
-
-            if (j + 1 < n) stack_ctrl_->Newline();
+            wxVector<wxVariant> row;
+            row.push_back(wxVariant(wxString::Format("%3d:", label)));
+            row.push_back(wxVariant(wxString::FromUTF8(s.c_str())));
+            stack_ctrl_->AppendItem(row, marker);
         }
     }
 
     stack_ctrl_->Thaw();
-    // Top of the stack is at line 0; scroll there so the user always
-    // sees the most recent entry just below the entry line.
-    stack_ctrl_->ShowPosition(0);
 
-    // wxRichTextCtrl positions its caret at the end of the text after
-    // Clear/Write — on Windows the system caret then blinks at the
-    // bottom stack row, which looks like a typing prompt even though
-    // the widget is read-only. Hide it after every rebuild. (macOS
-    // draws its own dark caret; harmless.)
-    if (auto* caret = stack_ctrl_->GetCaret()) caret->Hide();
+    // Scroll so row 0 (top of stack) is visible. Skipped on empty
+    // stack to avoid passing an invalid row to RowToItem.
+    if (stack_ctrl_->GetItemCount() > 0) {
+        stack_ctrl_->EnsureVisible(stack_ctrl_->RowToItem(0));
+    }
 }
 
 // === TopBar: custom-painted top region (message + entry) =====================
@@ -1119,14 +1174,43 @@ void CalcPanel::on_key_down(wxKeyEvent& e) {
 }
 
 void CalcPanel::clear_selections() {
-    if (stack_ctrl_)  stack_ctrl_->SelectNone();
+    if (stack_ctrl_)  stack_ctrl_->UnselectAll();
     if (trail_panel_) trail_panel_->SelectNone();
-    // Pull focus off whichever rich-text widget might own it, onto the
-    // panel itself. SelectNone clears the blue highlight, but the
-    // caret (the blinking I-beam) only goes away when the widget loses
-    // focus. The panel has wxWANTS_CHARS and the same on_char/
-    // on_key_down bindings, so subsequent typing keeps working.
+    // Pull focus off whichever child might own it, onto the panel
+    // itself. For the trail (still wxRichTextCtrl) this also makes
+    // its blinking I-beam caret go away. For the stack (now
+    // wxDataViewListCtrl) there's no caret but moving focus keeps
+    // selection-highlight management consistent and ensures
+    // subsequent typing routes through the panel's on_char /
+    // on_key_down bindings (which have wxWANTS_CHARS).
     if (FindFocus() != this) SetFocus();
+}
+
+void CalcPanel::on_stack_copy(wxCommandEvent&) {
+    wxDataViewItemArray sel;
+    stack_ctrl_->GetSelections(sel);
+    if (sel.empty()) return;
+
+    // Build text in row order (top-of-stack first since that's how
+    // rows are sorted in the widget).
+    std::vector<int> rows;
+    rows.reserve(sel.size());
+    for (const auto& item : sel) {
+        rows.push_back(stack_ctrl_->ItemToRow(item));
+    }
+    std::sort(rows.begin(), rows.end());
+
+    wxString text;
+    for (size_t i = 0; i < rows.size(); ++i) {
+        if (i) text += wxT("\n");
+        // Column 1 is the value (column 0 is the index label).
+        text += stack_ctrl_->GetTextValue(rows[i], 1);
+    }
+
+    if (wxTheClipboard->Open()) {
+        wxTheClipboard->SetData(new wxTextDataObject(text));
+        wxTheClipboard->Close();
+    }
 }
 
 // === TrailPanel: right-pane trail viewer =====================================

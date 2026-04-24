@@ -3,7 +3,8 @@
 #include <wx/wx.h>
 #include <wx/timer.h>
 #include <wx/splitter.h>
-#include <wx/richtext/richtextctrl.h>
+#include <wx/dataview.h>
+#include <wx/richtext/richtextctrl.h>  // still needed by TrailPanel
 #include <atomic>
 #include <functional>
 #include <memory>
@@ -134,6 +135,11 @@ private:
     void update_stack();
     void clear_selections();
 
+    // Cmd+C / Ctrl+C handler when the stack widget owns focus. Reads
+    // the selected rows and writes the values (just the values, one
+    // per line, top-of-stack first) to the clipboard.
+    void on_stack_copy(wxCommandEvent& e);
+
     // Submit `work` to the runner. on_done builds the display snapshot
     // on the worker thread (formatting huge numbers can be slow and
     // would freeze the UI if done here), then re-enters the UI via
@@ -169,9 +175,9 @@ private:
     bool              busy_ = false;           // a job is in flight
     bool              computing_overlay_visible_ = false;
     bool              pending_meta_ = false;   // Esc-as-meta one-shot flag
-    TopBar*           top_bar_   = nullptr;
-    wxRichTextCtrl*   stack_ctrl_ = nullptr;
-    ModeBar*          mode_bar_  = nullptr;
+    TopBar*               top_bar_   = nullptr;
+    wxDataViewListCtrl*   stack_ctrl_ = nullptr;
+    ModeBar*              mode_bar_  = nullptr;
     TrailPanel*       trail_panel_ = nullptr;  // owned by the frame
 };
 
