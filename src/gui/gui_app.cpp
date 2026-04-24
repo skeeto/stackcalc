@@ -665,16 +665,19 @@ CalcPanel::CalcPanel(wxWindow* parent)
         store->DecRef();
     }
 
+    // Set the monospace font on the control BEFORE adding columns.
+    // wxWidgets' Cocoa DataView captures each column's NSCell font
+    // from the control's font at the moment AppendTextColumn runs
+    // (src/osx/cocoa/dataview.mm:444); a SetFont after the fact
+    // doesn't retroactively update existing cells.
+    stack_ctrl_->SetFont(mono_font_);
+
     // Two columns: right-aligned fixed-width index, left-aligned
     // stretching value. CELL_INERT = read-only, no inline editing.
     stack_ctrl_->AppendTextColumn(wxEmptyString, wxDATAVIEW_CELL_INERT,
         FromDIP(56), wxALIGN_RIGHT, 0);
     stack_ctrl_->AppendTextColumn(wxEmptyString, wxDATAVIEW_CELL_INERT,
         -1, wxALIGN_LEFT, wxDATAVIEW_COL_RESIZABLE);
-
-    // Monospace font for digit alignment. On Cocoa this is the only
-    // font knob (applies to all cells, which is what we want).
-    stack_ctrl_->SetFont(mono_font_);
 
     // Bottom: custom-painted mode line.
     mode_bar_ = new ModeBar(this, this);
