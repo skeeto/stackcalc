@@ -573,12 +573,6 @@ void StackCalcFrame::on_char_hook(wxKeyEvent& e) {
         code == WXK_BACK   || code == WXK_DELETE       ||
         code == WXK_TAB    || code == WXK_SPACE        ||
         code == WXK_ESCAPE) {
-        // Mark Enter so the DataView activation handler (which
-        // also fires from Enter on macOS via NSResponder) can
-        // recognise and skip it — letting our RET path here win.
-        if (code == WXK_RETURN || code == WXK_NUMPAD_ENTER) {
-            panel_->note_enter_event();
-        }
         panel_->on_key_down(e);
         return;
     }
@@ -700,13 +694,25 @@ CalcPanel::CalcPanel(wxWindow* parent)
         -1, wxALIGN_LEFT, wxDATAVIEW_COL_RESIZABLE);
     stack_ctrl_->Bind(wxEVT_DATAVIEW_ITEM_EDITING_DONE,
                       &CalcPanel::on_dataview_edit_done, this);
-    // Open the in-place editor on activation (double-click on every
-    // platform; also Enter on Windows where NSResponder isn't a
-    // factor). The handler filters out the macOS-only case where
-    // Enter-driven activation duplicates with our CHAR_HOOK's RET
-    // dispatch — see on_dataview_activate.
+    // Per-platform binding for opening the in-place editor:
+    //   macOS: LEFT_DCLICK. wxEVT_DATAVIEW_ITEM_ACTIVATED ALSO
+    //     fires from Enter on macOS (NSTableView consumes Enter at
+    //     the NSResponder level before wx's CHAR_HOOK gets a chance,
+    //     so we can't even detect it to filter), and using it would
+    //     hijack the calculator's RET keystroke.
+    //   Windows / generic: ITEM_ACTIVATED. The generic backend
+    //     consumes the second click of a fast double-click in its
+    //     selection logic, so LEFT_DCLICK requires three clicks
+    //     instead of two — but ITEM_ACTIVATED works in one
+    //     double-click and Enter is properly absorbed by CHAR_HOOK
+    //     before reaching it.
+#ifdef __WXOSX__
+    stack_ctrl_->Bind(wxEVT_LEFT_DCLICK,
+                      &CalcPanel::on_dataview_dclick, this);
+#else
     stack_ctrl_->Bind(wxEVT_DATAVIEW_ITEM_ACTIVATED,
                       &CalcPanel::on_dataview_activate, this);
+#endif
 
     // Mode line + flag indicators live on the frame's wxStatusBar
     // (created in StackCalcFrame's ctor); no panel-level child
@@ -1147,47 +1153,32 @@ void CalcPanel::on_dataview_edit_done(wxDataViewEvent& e) {
     e.Veto();
 }
 
-void CalcPanel::note_enter_event() {
-    last_enter_event_ms_ = wxGetLocalTimeMillis().GetValue();
-}
-
-bool CalcPanel::enter_event_recent() const {
-    // 50 ms is well above the wx-event-dispatch latency between
-    // CHAR_HOOK firing and the duplicate ITEM_ACTIVATED arriving,
-    // and well below any plausible "press Enter then immediately
-    // double-click" interval.
-    return (wxGetLocalTimeMillis().GetValue() - last_enter_event_ms_) < 50;
-}
-
 void CalcPanel::on_dataview_activate(wxDataViewEvent& e) {
-    // ITEM_ACTIVATED fires on mouse double-click (every platform)
-    // AND on Enter on a focused row. We only want the former: Enter
-    // is the calculator's RET (push entry onto stack), and that path
-    // is wired through the frame's CHAR_HOOK. On Windows the wx
-    // generic backend doesn't double-fire — CHAR_HOOK absorbs Enter,
-    // DataView never sees it, ITEM_ACTIVATED fires only on mouse
-    // double-click. On macOS NSTableView's NSResponder chain
-    // generates ITEM_ACTIVATED from Enter independently of CHAR_HOOK,
-    // so we'd hijack RET if we acted unconditionally.
-    //
-    // Filter via timestamp: CHAR_HOOK calls note_enter_event() right
-    // before dispatching Enter to the calculator. If the duplicate
-    // ITEM_ACTIVATED arrives within ~50 ms (typical event-dispatch
-    // latency), recognise it as Enter-driven and skip.
-    //
-    // wxGetKeyState(WXK_RETURN) would be conceptually cleaner but
-    // requires Accessibility permission for non-modifier keys on
-    // macOS (otherwise returns false), so it's unreliable here.
-    if (enter_event_recent()) return;
+    // Bound only on non-macOS platforms (see ctor for per-platform
+    // rationale). On Windows / generic the activation event fires
+    // on mouse double-click only — Enter is absorbed by the frame's
+    // CHAR_HOOK before DataView sees it.
     auto* ctrl = static_cast<wxDataViewCtrl*>(e.GetEventObject());
     if (!ctrl) return;
     auto item = e.GetItem();
     if (!item.IsOk()) return;
-    // Always edit column 1 (value) regardless of which column was
-    // double-clicked — column 0 (index/tag) is INERT and EditItem on
-    // it would no-op anyway.
-    auto* edit_col = ctrl->GetColumn(1);
+    auto* edit_col = ctrl->GetColumn(1);  // value column
     if (!edit_col) return;
+    ctrl->EditItem(item, edit_col);
+}
+
+void CalcPanel::on_dataview_dclick(wxMouseEvent& e) {
+    // Bound only on macOS (see ctor for per-platform rationale).
+    // Mouse double-click bypasses the NSTableView Enter activation
+    // we can't otherwise filter.
+    auto* ctrl = static_cast<wxDataViewCtrl*>(e.GetEventObject());
+    if (!ctrl) { e.Skip(); return; }
+    wxDataViewItem item;
+    wxDataViewColumn* hit_col = nullptr;
+    ctrl->HitTest(e.GetPosition(), item, hit_col);
+    if (!item.IsOk()) { e.Skip(); return; }
+    auto* edit_col = ctrl->GetColumn(1);  // value column
+    if (!edit_col) { e.Skip(); return; }
     ctrl->EditItem(item, edit_col);
 }
 
@@ -1222,8 +1213,14 @@ TrailPanel::TrailPanel(wxWindow* parent, CalcPanel* host)
                      -1, wxALIGN_LEFT, wxDATAVIEW_COL_RESIZABLE);
     Bind(wxEVT_DATAVIEW_ITEM_EDITING_DONE,
          &CalcPanel::on_dataview_edit_done, host_);
+    // See stack_ctrl_'s same binding for the per-platform rationale.
+#ifdef __WXOSX__
+    Bind(wxEVT_LEFT_DCLICK,
+         &CalcPanel::on_dataview_dclick, host_);
+#else
     Bind(wxEVT_DATAVIEW_ITEM_ACTIVATED,
          &CalcPanel::on_dataview_activate, host_);
+#endif
 
     // Forward keystrokes to the calculator so typing still works
     // while the trail widget has focus from click-to-select. Frame
