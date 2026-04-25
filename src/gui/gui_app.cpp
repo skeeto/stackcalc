@@ -573,6 +573,12 @@ void StackCalcFrame::on_char_hook(wxKeyEvent& e) {
         code == WXK_BACK   || code == WXK_DELETE       ||
         code == WXK_TAB    || code == WXK_SPACE        ||
         code == WXK_ESCAPE) {
+        // Mark Enter so the DataView activation handler (which
+        // also fires from Enter on macOS via NSResponder) can
+        // recognise and skip it — letting our RET path here win.
+        if (code == WXK_RETURN || code == WXK_NUMPAD_ENTER) {
+            panel_->note_enter_event();
+        }
         panel_->on_key_down(e);
         return;
     }
@@ -1141,6 +1147,18 @@ void CalcPanel::on_dataview_edit_done(wxDataViewEvent& e) {
     e.Veto();
 }
 
+void CalcPanel::note_enter_event() {
+    last_enter_event_ms_ = wxGetLocalTimeMillis().GetValue();
+}
+
+bool CalcPanel::enter_event_recent() const {
+    // 50 ms is well above the wx-event-dispatch latency between
+    // CHAR_HOOK firing and the duplicate ITEM_ACTIVATED arriving,
+    // and well below any plausible "press Enter then immediately
+    // double-click" interval.
+    return (wxGetLocalTimeMillis().GetValue() - last_enter_event_ms_) < 50;
+}
+
 void CalcPanel::on_dataview_activate(wxDataViewEvent& e) {
     // ITEM_ACTIVATED fires on mouse double-click (every platform)
     // AND on Enter on a focused row. We only want the former: Enter
@@ -1152,13 +1170,15 @@ void CalcPanel::on_dataview_activate(wxDataViewEvent& e) {
     // generates ITEM_ACTIVATED from Enter independently of CHAR_HOOK,
     // so we'd hijack RET if we acted unconditionally.
     //
-    // Filter by checking whether Enter is physically pressed at the
-    // moment the event runs. On a true mouse double-click, the user
-    // isn't holding Enter; on Enter activation the key is still down
-    // (key release fires later). Reliable on both platforms.
-    if (wxGetKeyState(WXK_RETURN) || wxGetKeyState(WXK_NUMPAD_ENTER)) {
-        return;
-    }
+    // Filter via timestamp: CHAR_HOOK calls note_enter_event() right
+    // before dispatching Enter to the calculator. If the duplicate
+    // ITEM_ACTIVATED arrives within ~50 ms (typical event-dispatch
+    // latency), recognise it as Enter-driven and skip.
+    //
+    // wxGetKeyState(WXK_RETURN) would be conceptually cleaner but
+    // requires Accessibility permission for non-modifier keys on
+    // macOS (otherwise returns false), so it's unreliable here.
+    if (enter_event_recent()) return;
     auto* ctrl = static_cast<wxDataViewCtrl*>(e.GetEventObject());
     if (!ctrl) return;
     auto item = e.GetItem();

@@ -143,9 +143,17 @@ public:
     // wxEVT_DATAVIEW_ITEM_ACTIVATED handler for stack/trail. Opens
     // the value column's in-place editor for substring-copy. The
     // handler filters out Enter-driven activations (a macOS quirk)
-    // by checking the live key state — see the implementation for
-    // why. Public so TrailPanel's ctor can bind it on `host_`.
+    // by checking note_enter_event's timestamp. Public so
+    // TrailPanel's ctor can bind it on `host_`.
     void on_dataview_activate(wxDataViewEvent& e);
+
+    // Frame's CHAR_HOOK calls this just before dispatching Enter
+    // to the calculator's RET path, so the DataView activation
+    // handler that fires shortly after (on macOS — NSResponder
+    // double-firing) can recognise the activation as Enter-driven
+    // and skip it.
+    void note_enter_event();
+    bool enter_event_recent() const;
 
 private:
     void on_blink_tick(wxTimerEvent& e);
@@ -191,6 +199,7 @@ private:
     bool              busy_ = false;           // a job is in flight
     bool              computing_overlay_visible_ = false;
     bool              pending_meta_ = false;   // Esc-as-meta one-shot flag
+    long long         last_enter_event_ms_ = -1000;  // see note_enter_event
     wxStaticText*         message_text_ = nullptr;  // red, hidden when empty
     wxStaticText*         entry_text_   = nullptr;  // mono entry buffer display
     wxDataViewListCtrl*   stack_ctrl_   = nullptr;
