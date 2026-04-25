@@ -1168,16 +1168,21 @@ void CalcPanel::on_paste(wxCommandEvent&) {
     if (busy_) return;
 
     // Read clipboard text. wxTheClipboard requires Open() before any
-    // access, even read-only. IsSupported(wxDF_TEXT) handles the
-    // common case of an empty clipboard or one holding non-text data
-    // (image, file list, etc.) without falling into GetData's noisy
-    // failure path.
+    // access, even read-only. Check both UNICODETEXT (UTF-16, what
+    // macOS NSPasteboard and Windows clipboard actually store) and
+    // plain TEXT (Latin-1, what some Linux apps still emit). On
+    // macOS, IsSupported(wxDF_TEXT) returns false even when there's
+    // perfectly good text on the clipboard, because NSPasteboard
+    // doesn't expose a Latin-1 text type — only UNICODETEXT works
+    // there. wxTextDataObject internally negotiates either format.
     wxString text;
     if (wxTheClipboard->Open()) {
-        if (wxTheClipboard->IsSupported(wxDF_TEXT)) {
+        if (wxTheClipboard->IsSupported(wxDF_UNICODETEXT) ||
+            wxTheClipboard->IsSupported(wxDF_TEXT)) {
             wxTextDataObject data;
-            wxTheClipboard->GetData(data);
-            text = data.GetText();
+            if (wxTheClipboard->GetData(data)) {
+                text = data.GetText();
+            }
         }
         wxTheClipboard->Close();
     }
