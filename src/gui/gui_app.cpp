@@ -695,12 +695,13 @@ CalcPanel::CalcPanel(wxWindow* parent)
     stack_ctrl_->Bind(wxEVT_DATAVIEW_ITEM_EDITING_DONE,
                       &CalcPanel::on_dataview_edit_done, this);
     // macOS NSTableView's default double-click behavior is "select
-    // row" — it doesn't enter edit mode without a second separate
-    // click. Catch wxEVT_DATAVIEW_ITEM_ACTIVATED (which fires on
-    // double-click) and trigger the edit programmatically via
-    // EditItem so the substring-copy affordance actually works.
-    stack_ctrl_->Bind(wxEVT_DATAVIEW_ITEM_ACTIVATED,
-                      &CalcPanel::on_dataview_activated, this);
+    // row" — it doesn't enter edit mode without a separate second
+    // click. Bind LEFT_DCLICK directly so we can call EditItem
+    // ourselves. (wxEVT_DATAVIEW_ITEM_ACTIVATED would also fit but
+    // that fires on Enter too, and stealing Enter would block the
+    // calculator's RET — push the current entry onto the stack.)
+    stack_ctrl_->Bind(wxEVT_LEFT_DCLICK,
+                      &CalcPanel::on_dataview_dclick, this);
 
     // Mode line + flag indicators live on the frame's wxStatusBar
     // (created in StackCalcFrame's ctor); no panel-level child
@@ -1141,20 +1142,26 @@ void CalcPanel::on_dataview_edit_done(wxDataViewEvent& e) {
     e.Veto();
 }
 
-void CalcPanel::on_dataview_activated(wxDataViewEvent& e) {
-    // Open the in-place editor on the value column. The activation
-    // event reports the column the user double-clicked, but it
-    // might be the index/tag (column 0 — INERT and not useful for
-    // substring copy) or the value column. EditItem on an INERT
-    // column is a no-op. So just unconditionally edit column-1 of
-    // the activated row, regardless of which column was clicked.
+void CalcPanel::on_dataview_dclick(wxMouseEvent& e) {
+    // Mouse double-click on a stack/trail row: open the value
+    // column's in-place editor for substring-copy. We don't bind
+    // wxEVT_DATAVIEW_ITEM_ACTIVATED instead because on macOS that
+    // also fires from Enter (NSTableView's NSResponder chain
+    // generates it independently of wx's CHAR_HOOK), which would
+    // hijack the calculator's RET keystroke. Pure mouse-double-
+    // click avoids that entirely.
     auto* ctrl = static_cast<wxDataViewCtrl*>(e.GetEventObject());
-    if (!ctrl) return;
-    auto item = e.GetItem();
-    if (!item.IsOk()) return;
-    auto* col = ctrl->GetColumn(1);
-    if (!col) return;
-    ctrl->EditItem(item, col);
+    if (!ctrl) { e.Skip(); return; }
+    wxDataViewItem item;
+    wxDataViewColumn* hit_col = nullptr;
+    ctrl->HitTest(e.GetPosition(), item, hit_col);
+    if (!item.IsOk()) { e.Skip(); return; }
+    // Always edit column 1 (value) regardless of which column was
+    // clicked — column 0 (index/tag) is INERT and EditItem on it
+    // would no-op anyway.
+    auto* edit_col = ctrl->GetColumn(1);
+    if (!edit_col) { e.Skip(); return; }
+    ctrl->EditItem(item, edit_col);
 }
 
 // === TrailPanel: right-pane trail viewer =====================================
@@ -1188,11 +1195,10 @@ TrailPanel::TrailPanel(wxWindow* parent, CalcPanel* host)
                      -1, wxALIGN_LEFT, wxDATAVIEW_COL_RESIZABLE);
     Bind(wxEVT_DATAVIEW_ITEM_EDITING_DONE,
          &CalcPanel::on_dataview_edit_done, host_);
-    // See stack_ctrl_'s same binding for why this is needed —
-    // double-click doesn't auto-trigger edit mode on macOS, so we
-    // call EditItem ourselves on activation.
-    Bind(wxEVT_DATAVIEW_ITEM_ACTIVATED,
-         &CalcPanel::on_dataview_activated, host_);
+    // See stack_ctrl_'s same binding for why we use LEFT_DCLICK
+    // rather than ITEM_ACTIVATED here.
+    Bind(wxEVT_LEFT_DCLICK,
+         &CalcPanel::on_dataview_dclick, host_);
 
     // Forward keystrokes to the calculator so typing still works
     // while the trail widget has focus from click-to-select. Frame
