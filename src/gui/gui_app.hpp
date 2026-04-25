@@ -140,18 +140,12 @@ public:
     // so TrailPanel's ctor can bind it on `host_`.
     void on_dataview_edit_done(wxDataViewEvent& e);
 
-    // Mouse-double-click handler for stack/trail. Opens the value
-    // column's in-place editor (CELL_EDITABLE) so the user can
-    // drag-select a substring inside it; vetoed at commit so the
-    // underlying value is unchanged. Public so TrailPanel's ctor
-    // can bind it on `host_`.
-    //
-    // Bound to wxEVT_LEFT_DCLICK rather than the more obvious
-    // wxEVT_DATAVIEW_ITEM_ACTIVATED because on macOS the latter
-    // ALSO fires from Enter (NSTableView's NSResponder chain
-    // generates activation independently of wx's CHAR_HOOK), and
-    // stealing Enter would block the calculator's RET keystroke.
-    void on_dataview_dclick(wxMouseEvent& e);
+    // wxEVT_DATAVIEW_ITEM_ACTIVATED handler for stack/trail. Opens
+    // the value column's in-place editor for substring-copy. The
+    // handler filters out Enter-driven activations (a macOS quirk)
+    // by checking the live key state — see the implementation for
+    // why. Public so TrailPanel's ctor can bind it on `host_`.
+    void on_dataview_activate(wxDataViewEvent& e);
 
 private:
     void on_blink_tick(wxTimerEvent& e);
