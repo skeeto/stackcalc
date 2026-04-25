@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(stackcalc VERSION 1.0.0 LANGUAGES C CXX)
+project(stackcalc VERSION 1.1.0 LANGUAGES C CXX)
 
 option(STACKCALC_USE_CCACHE "Use ccache to speed up rebuilds if available" ON)
 if(STACKCALC_USE_CCACHE)
