@@ -153,6 +153,11 @@ public:
     void on_dataview_activate(wxDataViewEvent& e);
     void on_dataview_dclick(wxMouseEvent& e);
 
+    // Right-click context menu for the stack widget. Re-selects the
+    // clicked row if not already in the selection (native idiom),
+    // then pops up Copy / Copy Value as Substring… / Select All.
+    void on_stack_context_menu(wxDataViewEvent& e);
+
 private:
     void on_blink_tick(wxTimerEvent& e);
     void on_overlay_tick(wxTimerEvent& e);
@@ -216,6 +221,10 @@ public:
     // Cmd/Ctrl+C handler: copy the values of selected trail rows
     // (just the values, one per line) to the clipboard.
     void on_trail_copy(wxCommandEvent& e);
+
+    // Right-click context menu for the trail. Same shape as the
+    // stack's: Copy / Copy Value as Substring… / Select All.
+    void on_context_menu(wxDataViewEvent& e);
 
 private:
     CalcPanel* host_;

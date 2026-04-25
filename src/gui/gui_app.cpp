@@ -714,6 +714,10 @@ CalcPanel::CalcPanel(wxWindow* parent)
                       &CalcPanel::on_dataview_activate, this);
 #endif
 
+    // Right-click context menu — Copy / Copy Substring / Select All.
+    stack_ctrl_->Bind(wxEVT_DATAVIEW_ITEM_CONTEXT_MENU,
+                      &CalcPanel::on_stack_context_menu, this);
+
     // Mode line + flag indicators live on the frame's wxStatusBar
     // (created in StackCalcFrame's ctor); no panel-level child
     // widget for them anymore.
@@ -1153,6 +1157,41 @@ void CalcPanel::on_dataview_edit_done(wxDataViewEvent& e) {
     e.Veto();
 }
 
+void CalcPanel::on_stack_context_menu(wxDataViewEvent& e) {
+    // Native idiom: if the user right-clicks a row that isn't in
+    // the current selection, switch the selection to just that row
+    // before showing the menu — so menu actions operate on what was
+    // clicked, not whatever was selected before.
+    auto item = e.GetItem();
+    if (item.IsOk() && !stack_ctrl_->IsSelected(item)) {
+        stack_ctrl_->UnselectAll();
+        stack_ctrl_->Select(item);
+    }
+
+    wxMenu menu;
+    menu.Append(wxID_COPY, wxT("Copy\tCtrl+C"));
+    auto* substring = menu.Append(wxID_ANY,
+                                  wxT("Copy Value as Substring…"));
+    menu.AppendSeparator();
+    menu.Append(wxID_SELECTALL, wxT("Select All\tCtrl+A"));
+
+    // Disable items that have nothing to act on.
+    menu.Enable(wxID_COPY, stack_ctrl_->GetSelectedItemsCount() > 0);
+    menu.Enable(substring->GetId(), item.IsOk());
+    menu.Enable(wxID_SELECTALL, stack_ctrl_->GetItemCount() > 0);
+
+    menu.Bind(wxEVT_MENU, &CalcPanel::on_stack_copy, this, wxID_COPY);
+    menu.Bind(wxEVT_MENU, [this, item](wxCommandEvent&) {
+        if (auto* col = stack_ctrl_->GetColumn(1))
+            stack_ctrl_->EditItem(item, col);
+    }, substring->GetId());
+    menu.Bind(wxEVT_MENU, [this](wxCommandEvent&) {
+        stack_ctrl_->SelectAll();
+    }, wxID_SELECTALL);
+
+    PopupMenu(&menu);
+}
+
 void CalcPanel::on_dataview_activate(wxDataViewEvent& e) {
     // Bound only on non-macOS platforms (see ctor for per-platform
     // rationale). On Windows / generic the activation event fires
@@ -1222,6 +1261,10 @@ TrailPanel::TrailPanel(wxWindow* parent, CalcPanel* host)
          &CalcPanel::on_dataview_activate, host_);
 #endif
 
+    // Right-click context menu — same shape as stack.
+    Bind(wxEVT_DATAVIEW_ITEM_CONTEXT_MENU,
+         &TrailPanel::on_context_menu, this);
+
     // Forward keystrokes to the calculator so typing still works
     // while the trail widget has focus from click-to-select. Frame
     // CHAR_HOOK already handles RET/TAB/etc.
@@ -1266,6 +1309,35 @@ void TrailPanel::refresh_from_state() {
         int target = (ptr >= 0 && ptr < n) ? ptr : (n - 1);
         EnsureVisible(RowToItem(target));
     }
+}
+
+void TrailPanel::on_context_menu(wxDataViewEvent& e) {
+    auto item = e.GetItem();
+    if (item.IsOk() && !IsSelected(item)) {
+        UnselectAll();
+        Select(item);
+    }
+
+    wxMenu menu;
+    menu.Append(wxID_COPY, wxT("Copy\tCtrl+C"));
+    auto* substring = menu.Append(wxID_ANY,
+                                  wxT("Copy Value as Substring…"));
+    menu.AppendSeparator();
+    menu.Append(wxID_SELECTALL, wxT("Select All\tCtrl+A"));
+
+    menu.Enable(wxID_COPY, GetSelectedItemsCount() > 0);
+    menu.Enable(substring->GetId(), item.IsOk());
+    menu.Enable(wxID_SELECTALL, GetItemCount() > 0);
+
+    menu.Bind(wxEVT_MENU, &TrailPanel::on_trail_copy, this, wxID_COPY);
+    menu.Bind(wxEVT_MENU, [this, item](wxCommandEvent&) {
+        if (auto* col = GetColumn(1)) EditItem(item, col);
+    }, substring->GetId());
+    menu.Bind(wxEVT_MENU, [this](wxCommandEvent&) {
+        SelectAll();
+    }, wxID_SELECTALL);
+
+    PopupMenu(&menu);
 }
 
 void TrailPanel::on_trail_copy(wxCommandEvent&) {
