@@ -266,6 +266,16 @@ void StackCalcFrame::build_menus() {
     add_action(edit, "&Undo\tCtrl+Z",        "U");
     add_action(edit, "&Redo\tCtrl+Y",        "D");
     edit->AppendSeparator();
+    // Paste from clipboard. Stock wxID_PASTE picks up the platform's
+    // native label/shortcut conventions (Cmd+V on macOS, Ctrl+V
+    // elsewhere). Per-widget accelerator tables on stack/trail also
+    // route Cmd/Ctrl+V to the same handler so the shortcut works
+    // regardless of which DataView has focus.
+    edit->Append(wxID_PASTE, "&Paste\tCtrl+V");
+    Bind(wxEVT_MENU,
+         [this](wxCommandEvent& e) { panel_->on_paste(e); },
+         wxID_PASTE);
+    edit->AppendSeparator();
     // Stack ops: avoid wx accelerators here because they would compete
     // with our CHAR_HOOK for the actual keystrokes (Back/Tab/Alt+Tab/
     // Alt+Enter) and break their context-aware behavior (e.g., Backspace
@@ -748,13 +758,19 @@ CalcPanel::CalcPanel(wxWindow* parent)
 
     // Cmd/Ctrl+C: copy selected stack values (just the values, one
     // per line) to the clipboard. wxACCEL_CTRL maps to Cmd on macOS.
+    // Cmd/Ctrl+V: parse clipboard text and push it on the stack.
     // wxDataViewCtrl handles Cmd+A (select all) natively.
     stack_ctrl_->Bind(wxEVT_MENU, &CalcPanel::on_stack_copy,
                       this, wxID_COPY);
+    stack_ctrl_->Bind(wxEVT_MENU, &CalcPanel::on_paste,
+                      this, wxID_PASTE);
     {
-        wxAcceleratorEntry copy_entry(wxACCEL_CTRL, (int)'C', wxID_COPY);
-        wxAcceleratorTable copy_accel(1, &copy_entry);
-        stack_ctrl_->SetAcceleratorTable(copy_accel);
+        wxAcceleratorEntry entries[2] = {
+            wxAcceleratorEntry(wxACCEL_CTRL, (int)'C', wxID_COPY),
+            wxAcceleratorEntry(wxACCEL_CTRL, (int)'V', wxID_PASTE),
+        };
+        wxAcceleratorTable accel(2, entries);
+        stack_ctrl_->SetAcceleratorTable(accel);
     }
 
     // Initial display snapshot so paint code has something to read
@@ -1148,6 +1164,50 @@ void CalcPanel::on_stack_copy(wxCommandEvent&) {
     }
 }
 
+void CalcPanel::on_paste(wxCommandEvent&) {
+    if (busy_) return;
+
+    // Read clipboard text. wxTheClipboard requires Open() before any
+    // access, even read-only. IsSupported(wxDF_TEXT) handles the
+    // common case of an empty clipboard or one holding non-text data
+    // (image, file list, etc.) without falling into GetData's noisy
+    // failure path.
+    wxString text;
+    if (wxTheClipboard->Open()) {
+        if (wxTheClipboard->IsSupported(wxDF_TEXT)) {
+            wxTextDataObject data;
+            wxTheClipboard->GetData(data);
+            text = data.GetText();
+        }
+        wxTheClipboard->Close();
+    }
+
+    // Convert wxString → UTF-8 std::string for the controller. Going
+    // through utf8 (rather than wxConvLibc / system narrow encoding)
+    // matters when the clipboard text contains characters outside
+    // ASCII (e.g. a copied "−" minus sign or fancy whitespace);
+    // Controller::paste_text doesn't itself accept those, but UTF-8
+    // round-tripping at least gives a clean error preview instead of
+    // mojibake in the rejection message.
+    std::string s = text.ToStdString(wxConvUTF8);
+
+    // Empty / non-text clipboard short-circuits with a message —
+    // don't bother spinning up a runner job for this.
+    if (s.empty()) {
+        cached_display_.message = "Clipboard is empty";
+        redraw();
+        return;
+    }
+
+    // Route through the runner like every other input. Paste is
+    // typically cheap (parsing and one push), but a clipboard with a
+    // megabyte-long integer would still benefit from the cancel
+    // pipeline and the busy guard.
+    submit_work([this, s = std::move(s)]{
+        ctrl_.paste_text(s);
+    });
+}
+
 void CalcPanel::on_dataview_edit_done(wxDataViewEvent& e) {
     // The CELL_EDITABLE columns on stack_ctrl_ and trail_panel_
     // exist purely so the user can pop up the native in-place
@@ -1169,18 +1229,23 @@ void CalcPanel::on_stack_context_menu(wxDataViewEvent& e) {
     }
 
     wxMenu menu;
-    menu.Append(wxID_COPY, wxT("Copy\tCtrl+C"));
+    menu.Append(wxID_COPY,  wxT("Copy\tCtrl+C"));
+    menu.Append(wxID_PASTE, wxT("Paste\tCtrl+V"));
     auto* substring = menu.Append(wxID_ANY,
                                   wxT("Copy Value as Substring…"));
     menu.AppendSeparator();
     menu.Append(wxID_SELECTALL, wxT("Select All\tCtrl+A"));
 
-    // Disable items that have nothing to act on.
+    // Disable items that have nothing to act on. Paste stays enabled
+    // even when the clipboard is empty — the handler reports it via
+    // the message line, and probing wxTheClipboard from inside this
+    // function would require Open()/Close() just for the enable check.
     menu.Enable(wxID_COPY, stack_ctrl_->GetSelectedItemsCount() > 0);
     menu.Enable(substring->GetId(), item.IsOk());
     menu.Enable(wxID_SELECTALL, stack_ctrl_->GetItemCount() > 0);
 
     menu.Bind(wxEVT_MENU, &CalcPanel::on_stack_copy, this, wxID_COPY);
+    menu.Bind(wxEVT_MENU, &CalcPanel::on_paste,      this, wxID_PASTE);
     menu.Bind(wxEVT_MENU, [this, item](wxCommandEvent&) {
         if (auto* col = stack_ctrl_->GetColumn(1))
             stack_ctrl_->EditItem(item, col);
@@ -1274,11 +1339,18 @@ TrailPanel::TrailPanel(wxWindow* parent, CalcPanel* host)
     // Cmd/Ctrl+C: copy selected trail entries (formatted "tag:
     // value", one per line) to the clipboard. Same accelerator
     // pattern as the stack widget.
+    // Cmd/Ctrl+V: route paste through the host so a paste from the
+    // trail's focus still pushes onto the stack (one paste handler,
+    // one place that defines paste semantics).
     Bind(wxEVT_MENU, &TrailPanel::on_trail_copy, this, wxID_COPY);
+    Bind(wxEVT_MENU, &CalcPanel::on_paste,       host_, wxID_PASTE);
     {
-        wxAcceleratorEntry copy_entry(wxACCEL_CTRL, (int)'C', wxID_COPY);
-        wxAcceleratorTable copy_accel(1, &copy_entry);
-        SetAcceleratorTable(copy_accel);
+        wxAcceleratorEntry entries[2] = {
+            wxAcceleratorEntry(wxACCEL_CTRL, (int)'C', wxID_COPY),
+            wxAcceleratorEntry(wxACCEL_CTRL, (int)'V', wxID_PASTE),
+        };
+        wxAcceleratorTable accel(2, entries);
+        SetAcceleratorTable(accel);
     }
 
     refresh_from_state();
@@ -1319,7 +1391,8 @@ void TrailPanel::on_context_menu(wxDataViewEvent& e) {
     }
 
     wxMenu menu;
-    menu.Append(wxID_COPY, wxT("Copy\tCtrl+C"));
+    menu.Append(wxID_COPY,  wxT("Copy\tCtrl+C"));
+    menu.Append(wxID_PASTE, wxT("Paste\tCtrl+V"));
     auto* substring = menu.Append(wxID_ANY,
                                   wxT("Copy Value as Substring…"));
     menu.AppendSeparator();
@@ -1330,6 +1403,7 @@ void TrailPanel::on_context_menu(wxDataViewEvent& e) {
     menu.Enable(wxID_SELECTALL, GetItemCount() > 0);
 
     menu.Bind(wxEVT_MENU, &TrailPanel::on_trail_copy, this, wxID_COPY);
+    menu.Bind(wxEVT_MENU, &CalcPanel::on_paste,       host_, wxID_PASTE);
     menu.Bind(wxEVT_MENU, [this, item](wxCommandEvent&) {
         if (auto* col = GetColumn(1)) EditItem(item, col);
     }, substring->GetId());

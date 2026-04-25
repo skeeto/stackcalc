@@ -803,6 +803,125 @@ TEST(ControllerTest, UndoUndoesLastArgs) {
     EXPECT_EQ(ctrl.display().stack_entries.back(), "5");
 }
 
+// --- Paste from clipboard (Controller::paste_text) -------------------
+
+TEST(ControllerTest, PasteSimpleInteger) {
+    Controller ctrl;
+    ctrl.paste_text("42");
+    EXPECT_EQ(ctrl.display().stack_depth, 1);
+    EXPECT_EQ(ctrl.display().stack_entries.back(), "42");
+    EXPECT_TRUE(ctrl.display().message.empty());
+}
+
+TEST(ControllerTest, PasteTrimsWhitespace) {
+    Controller ctrl;
+    ctrl.paste_text("\t  42 \n");
+    EXPECT_EQ(ctrl.display().stack_depth, 1);
+    EXPECT_EQ(ctrl.display().stack_entries.back(), "42");
+}
+
+TEST(ControllerTest, PasteNegativeWithMinus) {
+    Controller ctrl;
+    ctrl.paste_text("-42");
+    EXPECT_EQ(ctrl.display().stack_entries.back(), "-42");
+}
+
+TEST(ControllerTest, PasteLeadingPlusIgnored) {
+    Controller ctrl;
+    ctrl.paste_text("+42");
+    EXPECT_EQ(ctrl.display().stack_entries.back(), "42");
+}
+
+TEST(ControllerTest, PasteHexPrefix) {
+    Controller ctrl;
+    ctrl.paste_text("0xFF");
+    EXPECT_EQ(ctrl.display().stack_entries.back(), "255");
+}
+
+TEST(ControllerTest, PasteBinaryPrefix) {
+    Controller ctrl;
+    ctrl.paste_text("0b1010");
+    EXPECT_EQ(ctrl.display().stack_entries.back(), "10");
+}
+
+TEST(ControllerTest, PasteOctalPrefix) {
+    Controller ctrl;
+    ctrl.paste_text("0o17");
+    EXPECT_EQ(ctrl.display().stack_entries.back(), "15");
+}
+
+TEST(ControllerTest, PasteNegativeHex) {
+    Controller ctrl;
+    ctrl.paste_text("-0xFF");
+    EXPECT_EQ(ctrl.display().stack_entries.back(), "-255");
+}
+
+TEST(ControllerTest, PasteRadixPrefix) {
+    // Our native form is also accepted unchanged.
+    Controller ctrl;
+    ctrl.paste_text("16#FF");
+    EXPECT_EQ(ctrl.display().stack_entries.back(), "255");
+}
+
+TEST(ControllerTest, PasteFraction) {
+    Controller ctrl;
+    ctrl.paste_text("1:3");
+    EXPECT_EQ(ctrl.display().stack_entries.back(), "1:3");
+}
+
+TEST(ControllerTest, PasteScientific) {
+    Controller ctrl;
+    ctrl.paste_text("1.5e3");
+    EXPECT_EQ(ctrl.display().stack_depth, 1);
+    EXPECT_TRUE(ctrl.display().message.empty());
+}
+
+TEST(ControllerTest, PasteStripsCommas) {
+    // Display will reformat with the calculator's own grouping;
+    // the underlying value is 1234567.
+    Controller ctrl;
+    ctrl.paste_text("1,234,567");
+    EXPECT_EQ(ctrl.display().stack_depth, 1);
+    EXPECT_TRUE(ctrl.display().message.empty());
+}
+
+TEST(ControllerTest, PasteStripsInternalSpaces) {
+    Controller ctrl;
+    ctrl.paste_text("1 234 567");
+    EXPECT_EQ(ctrl.display().stack_depth, 1);
+    EXPECT_TRUE(ctrl.display().message.empty());
+}
+
+TEST(ControllerTest, PasteEmptyClipboardSetsMessage) {
+    Controller ctrl;
+    ctrl.paste_text("   \t\n  ");
+    EXPECT_EQ(ctrl.display().stack_depth, 0);
+    EXPECT_EQ(ctrl.display().message, "Clipboard is empty");
+}
+
+TEST(ControllerTest, PasteMultiLineRejected) {
+    Controller ctrl;
+    ctrl.paste_text("1\n2");
+    EXPECT_EQ(ctrl.display().stack_depth, 0);
+    EXPECT_EQ(ctrl.display().message, "Cannot paste multi-line text");
+}
+
+TEST(ControllerTest, PasteUnparseableSetsMessage) {
+    Controller ctrl;
+    ctrl.paste_text("not a number");
+    EXPECT_EQ(ctrl.display().stack_depth, 0);
+    EXPECT_TRUE(ctrl.display().message.find("Cannot paste") == 0);
+}
+
+TEST(ControllerTest, PasteRecordsTrailEntry) {
+    Controller ctrl;
+    ctrl.paste_text("42");
+    auto ds = ctrl.display();
+    ASSERT_FALSE(ds.trail_entries.empty());
+    EXPECT_EQ(ds.trail_entries.back().tag, "paste");
+    EXPECT_EQ(ds.trail_entries.back().value, "42");
+}
+
 // Special cases: even with huge exponents, base 0/±1 have well-defined results.
 TEST(ControllerTest, PowerSpecialCasesSurviveHugeExponent) {
     Controller ctrl;

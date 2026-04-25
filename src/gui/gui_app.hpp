@@ -158,6 +158,13 @@ public:
     // then pops up Copy / Copy Value as Substring… / Select All.
     void on_stack_context_menu(wxDataViewEvent& e);
 
+    // Cmd/Ctrl+V handler — read clipboard text and push it onto the
+    // stack as a parsed number via Controller::paste_text. Public so
+    // that the frame's Edit > Paste menu item, both context menus
+    // (stack and trail), and the accelerator tables on both widgets
+    // can all route through the same entry point.
+    void on_paste(wxCommandEvent& e);
+
 private:
     void on_blink_tick(wxTimerEvent& e);
     void on_overlay_tick(wxTimerEvent& e);

@@ -22,6 +22,19 @@ public:
     // input or prefix, no modifier flags. Not undoable.
     void reset();
 
+    // Parse `text` (typically clipboard contents) as a single number
+    // and push it onto the stack. Accepts the same syntax as keyboard
+    // number entry — integers, decimals ("3.14"), fractions ("1:3"),
+    // radix-prefixed ("16#FF"), scientific ("1.5e10") — plus a few
+    // friendlier external conventions:
+    //   * leading "-" (rather than our "_") for negatives;
+    //   * leading "0x"/"0b"/"0o" → "16#"/"2#"/"8#";
+    //   * digit-grouping commas and internal spaces are stripped
+    //     before parsing ("1,234,567" → "1234567").
+    // Multi-line text and unparseable strings are rejected with a
+    // descriptive message_; the stack is unchanged. Trail tag "paste".
+    void paste_text(const std::string& text);
+
     // Get the current display state (read-only snapshot).
     DisplayState display() const;
 

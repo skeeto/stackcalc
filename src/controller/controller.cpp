@@ -5,6 +5,8 @@
 #include "vector.hpp"
 #include "bitwise.hpp"
 #include "mpz_int64.hpp"
+#include "arithmetic.hpp"
+#include <algorithm>
 #include <cctype>
 #include <cstdint>
 #include <sstream>
@@ -32,6 +34,90 @@ void Controller::reset() {
     pending_prefix_.clear();
     pending_var_command_.clear();
     message_.clear();
+}
+
+void Controller::paste_text(const std::string& text) {
+    message_.clear();
+
+    // Trim outer whitespace (including newlines).
+    auto first = text.find_first_not_of(" \t\r\n\v\f");
+    if (first == std::string::npos) {
+        message_ = "Clipboard is empty";
+        return;
+    }
+    auto last = text.find_last_not_of(" \t\r\n\v\f");
+    std::string s = text.substr(first, last - first + 1);
+
+    // Reject multi-line input. Pasting a single number is the common
+    // case; multiple values per paste raises questions about ordering,
+    // partial-failure semantics, etc. that single-value paste ducks.
+    if (s.find('\n') != std::string::npos ||
+        s.find('\r') != std::string::npos) {
+        message_ = "Cannot paste multi-line text";
+        return;
+    }
+
+    // Pull off an optional leading sign and remember it as a flag.
+    // We can't just rewrite '-' to our '_' and feed it through because
+    // InputState's radix-prefix branch parses the digits before '#' as a
+    // signed int — so "_16#FF" produces radix -16 and the parse bails.
+    // Strip the sign here, parse the unsigned form, negate at the end.
+    bool negate = false;
+    if (!s.empty() && (s.front() == '-' || s.front() == '_')) {
+        negate = true;
+        s.erase(0, 1);
+    } else if (!s.empty() && s.front() == '+') {
+        s.erase(0, 1);
+    }
+
+    // C-style radix prefixes → our radix syntax. "0xFF" → "16#FF" so
+    // pasting hex from a debugger / source / browser Just Works.
+    if (s.size() >= 2 && s[0] == '0') {
+        char p = static_cast<char>(std::tolower(
+                     static_cast<unsigned char>(s[1])));
+        const char* prefix = nullptr;
+        if      (p == 'x') prefix = "16#";
+        else if (p == 'b') prefix = "2#";
+        else if (p == 'o') prefix = "8#";
+        if (prefix) s = std::string(prefix) + s.substr(2);
+    }
+
+    // Strip digit-grouping commas and internal spaces — copies from
+    // spreadsheets / formatted output ("1,234,567", "1 234 567")
+    // should just work. If the text was actually nonsense the parse
+    // step still rejects it.
+    s.erase(std::remove_if(s.begin(), s.end(), [](char c) {
+        return c == ',' || c == ' ';
+    }), s.end());
+
+    if (s.empty()) {
+        message_ = "Clipboard is empty";
+        return;
+    }
+
+    // Feed through a fresh InputState — the same parser the keyboard
+    // uses — so syntax + validation stay in one place.
+    InputState input;
+    bool consumed = true;
+    for (char c : s) {
+        if (!input.feed(c, stack_.state())) { consumed = false; break; }
+    }
+    auto v = consumed ? input.finalize(stack_.state()) : nullptr;
+    if (!v) {
+        // Show a preview of the offending text so the user knows what
+        // we tried to parse. Re-attach the sign for the message.
+        std::string shown = (negate ? "-" : "") + s;
+        std::string preview = shown.size() > 40
+            ? shown.substr(0, 37) + "..." : shown;
+        message_ = "Cannot paste '" + preview + "' as a number";
+        return;
+    }
+
+    if (negate) v = arith::neg(v);
+
+    stack_.begin_command();
+    stack_.push(v);
+    stack_.end_command("paste", {v});
 }
 
 bool Controller::process_key(const KeyEvent& key) {
