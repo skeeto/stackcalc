@@ -136,7 +136,7 @@ jobs:
           path: dist-windows
 
       - name: Sign stackcalc.exe
-        uses: skeeto/aas-sign@v0.4.0
+        uses: skeeto/aas-sign@v1.0.0
         with:
           endpoint:  ${{ secrets.TRUSTED_SIGNING_ENDPOINT }}
           account:   ${{ secrets.TRUSTED_SIGNING_ACCOUNT }}
