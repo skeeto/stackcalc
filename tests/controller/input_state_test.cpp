@@ -210,3 +210,63 @@ TEST(InputStateTest, DotAlone) {
     EXPECT_TRUE(is.active());
     EXPECT_EQ(is.text(), "0.");
 }
+
+// Regression: ".9 RET" used to throw "mpz_set_str". The "." path
+// builds text_ "0.", so feeding "9" gives "0.9". parse() concatenates
+// int_part + frac_part = "0" + "9" = "09" and called mpz_class("09")
+// — whose default base 0 means "auto-detect" with leading 0 → octal,
+// where "9" is invalid. Same trap for "0.8", "0.18", etc.
+TEST(InputStateTest, DotNineFinalizesAsPointNine) {
+    InputState is;
+    CalcState state;
+    EXPECT_TRUE(is.feed('.', state));
+    EXPECT_TRUE(is.feed('9', state));
+    auto v = is.finalize(state);
+    ASSERT_TRUE(v);
+    auto& f = v->as_float();
+    double val = f.mantissa.get_d() * std::pow(10.0, f.exponent);
+    EXPECT_NEAR(val, 0.9, 1e-15);
+}
+
+TEST(InputStateTest, ZeroPointEightFinalizesAsPointEight) {
+    InputState is;
+    CalcState state;
+    EXPECT_TRUE(is.feed('0', state));
+    EXPECT_TRUE(is.feed('.', state));
+    EXPECT_TRUE(is.feed('8', state));
+    auto v = is.finalize(state);
+    ASSERT_TRUE(v);
+    auto& f = v->as_float();
+    double val = f.mantissa.get_d() * std::pow(10.0, f.exponent);
+    EXPECT_NEAR(val, 0.8, 1e-15);
+}
+
+TEST(InputStateTest, ZeroPointEighteenFinalizesAsPointEighteen) {
+    // Multi-digit fractional with internal 8 — exercises the
+    // "all_digits = '018'" octal trap.
+    InputState is;
+    CalcState state;
+    is.feed('0', state); is.feed('.', state);
+    is.feed('1', state); is.feed('8', state);
+    auto v = is.finalize(state);
+    ASSERT_TRUE(v);
+    auto& f = v->as_float();
+    double val = f.mantissa.get_d() * std::pow(10.0, f.exponent);
+    EXPECT_NEAR(val, 0.18, 1e-15);
+}
+
+TEST(InputStateTest, FractionWithLeadingZeroNumerator) {
+    // "01:3" — same hazard in the fraction branch. mpz_class("01")
+    // wouldn't throw (parses as octal 1) but would silently yield the
+    // wrong value if a digit ≥ 8 appeared, e.g. "09:3".
+    InputState is;
+    CalcState state;
+    is.feed('0', state); is.feed('9', state);
+    is.feed(':', state);
+    is.feed('1', state); is.feed('0', state);
+    auto v = is.finalize(state);
+    ASSERT_TRUE(v);
+    EXPECT_TRUE(v->is_fraction());
+    EXPECT_EQ(v->as_fraction().num, 9);
+    EXPECT_EQ(v->as_fraction().den, 10);
+}

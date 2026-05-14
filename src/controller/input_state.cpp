@@ -167,15 +167,19 @@ ValuePtr InputState::parse(const CalcState& state) const {
         }
         ValuePtr secs;
         if (sec_str.find('.') != std::string::npos) {
-            // Parse as float
+            // Parse as float. Always force base 10 — mpz_class's
+            // string ctor defaults to base 0 (auto-detect), which
+            // means a leading "0" is read as octal and then "8"/"9"
+            // throw "mpz_set_str". See the float branch below for
+            // the canonical case (e.g. "0.9" → all_digits "09").
             auto dot = sec_str.find('.');
             std::string int_part = sec_str.substr(0, dot);
             std::string frac_part = sec_str.substr(dot + 1);
             std::string all = int_part + frac_part;
             int exp = -static_cast<int>(frac_part.size());
-            secs = Value::make_float_normalized(mpz_class(all), exp, state.precision);
+            secs = Value::make_float_normalized(mpz_class(all, 10), exp, state.precision);
         } else {
-            secs = Value::make_integer(mpz_class(sec_str));
+            secs = Value::make_integer(mpz_class(sec_str, 10));
         }
         return Value::make_hms(h, m, secs);
     }
@@ -183,8 +187,11 @@ ValuePtr InputState::parse(const CalcState& state) const {
     // Fraction: contains ':'
     if (text_.find(':') != std::string::npos) {
         auto colon = text_.find(':');
-        mpz_class num(text_.substr(0, colon));
-        mpz_class den(text_.substr(colon + 1));
+        // Force base 10; otherwise "01:3" would try to parse "01" as
+        // octal (succeeds for digits 0-7 but is the wrong value when
+        // the user meant decimal), and "09:3" would throw outright.
+        mpz_class num(text_.substr(0, colon),     10);
+        mpz_class den(text_.substr(colon + 1),    10);
         return Value::make_fraction(std::move(num), std::move(den));
     }
 
@@ -202,14 +209,20 @@ ValuePtr InputState::parse(const CalcState& state) const {
 
         auto dot_pos = s.find('.');
         if (dot_pos != std::string::npos) {
+            // Always force base 10. The ".9" path goes "." → text_
+            // "0." → "0.9", which builds all_digits = "09". The
+            // mpz_class string ctor's default base is 0 (auto-detect:
+            // leading 0 → octal), so "09" throws "mpz_set_str".
+            // Same hazard for "0.18", "0.198", "01.5e2", etc. — any
+            // leading-0 mantissa with an 8 or 9 anywhere in it.
             std::string int_part = s.substr(0, dot_pos);
             std::string frac_part = s.substr(dot_pos + 1);
             std::string all_digits = int_part + frac_part;
             int exp = explicit_exp - static_cast<int>(frac_part.size());
             if (all_digits.empty() || all_digits == "-") return Value::zero();
-            return Value::make_float_normalized(mpz_class(all_digits), exp, state.precision);
+            return Value::make_float_normalized(mpz_class(all_digits, 10), exp, state.precision);
         } else {
-            return Value::make_float_normalized(mpz_class(s), explicit_exp, state.precision);
+            return Value::make_float_normalized(mpz_class(s, 10), explicit_exp, state.precision);
         }
     }
 

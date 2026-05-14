@@ -301,20 +301,26 @@ ValuePtr read_value(std::istream& is) {
     expect(is, '(');
     std::string tag = read_atom(is);
 
+    // Force base 10 on every mpz_class(string) below. The formatter
+    // emits canonical decimal so this isn't normally needed, but the
+    // default ctor base is 0 (auto-detect: leading "0" → octal), and
+    // a hand-edited or older-format state file with a leading zero
+    // would otherwise either parse as the wrong value (octal) or
+    // throw "mpz_set_str" outright (e.g. "09").
     if (tag == "int") {
         std::string n = read_atom(is);
         expect(is, ')');
-        return Value::make_integer(mpz_class(n));
+        return Value::make_integer(mpz_class(n, 10));
     }
     if (tag == "frac") {
         std::string n = read_atom(is), d = read_atom(is);
         expect(is, ')');
-        return Value::make_fraction(mpz_class(n), mpz_class(d));
+        return Value::make_fraction(mpz_class(n, 10), mpz_class(d, 10));
     }
     if (tag == "float") {
         std::string m = read_atom(is), e = read_atom(is);
         expect(is, ')');
-        return Value::make_float(mpz_class(m), std::stoi(e));
+        return Value::make_float(mpz_class(m, 10), std::stoi(e));
     }
     if (tag == "hms") {
         std::string h = read_atom(is), m = read_atom(is);
