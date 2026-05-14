@@ -139,12 +139,66 @@ ValuePtr InputState::parse(const CalcState& state) const {
     // Check for radix# prefix
     auto hash_pos = text_.find('#');
     if (hash_pos != std::string::npos) {
-        int radix = std::stoi(text_.substr(0, hash_pos));
+        // A leading '-' applies to the whole value, not the radix.
+        // Without this peel, "-16#FF" would feed std::stoi("-16") and
+        // get a negative radix back, breaking everything downstream.
+        bool negate = (hash_pos > 0 && text_[0] == '-');
+        std::string radix_str = negate
+            ? text_.substr(1, hash_pos - 1)
+            : text_.substr(0, hash_pos);
+        if (radix_str.empty()) return nullptr;
+        int radix = std::stoi(radix_str);
+        if (radix < 2 || radix > 36) return nullptr;
+
         std::string digits = text_.substr(hash_pos + 1);
         if (digits.empty()) return nullptr;
-        mpz_class v;
-        v.set_str(digits, radix);
-        return Value::make_integer(std::move(v));
+
+        // Pure integer in `radix` (the common case, untouched).
+        auto dot = digits.find('.');
+        if (dot == std::string::npos) {
+            mpz_class v;
+            v.set_str(digits, radix);
+            if (negate) v = -v;
+            return Value::make_integer(std::move(v));
+        }
+
+        // Radix float: "16#3.243f6a88" → exact rational
+        //   (int_part * radix^k + frac_part) / radix^k
+        // where int_part and frac_part are interpreted in `radix` and k
+        // is the number of fractional digits. Convert the rational to a
+        // base-10 DecimalFloat by computing num * 10^P / radix^k at the
+        // current precision P; make_float_normalized handles the final
+        // rounding and trailing-zero strip. This is necessarily lossy
+        // for any non-power-of-10 radix (3/16 is exact in hex but
+        // recurring in decimal), but bounded by `state.precision`.
+        std::string int_part_s  = digits.substr(0, dot);
+        std::string frac_part_s = digits.substr(dot + 1);
+        if (int_part_s.empty() && frac_part_s.empty()) return nullptr;
+
+        mpz_class int_part(0);
+        mpz_class frac_part(0);
+        if (!int_part_s.empty() &&
+            int_part.set_str(int_part_s, radix) != 0) return nullptr;
+        if (!frac_part_s.empty() &&
+            frac_part.set_str(frac_part_s, radix) != 0) return nullptr;
+
+        unsigned long k = static_cast<unsigned long>(frac_part_s.size());
+        mpz_class radix_pow_k;
+        mpz_ui_pow_ui(radix_pow_k.get_mpz_t(),
+                      static_cast<unsigned long>(radix), k);
+        mpz_class num = int_part * radix_pow_k + frac_part;
+
+        unsigned long P = static_cast<unsigned long>(state.precision);
+        mpz_class ten_pow_P;
+        mpz_ui_pow_ui(ten_pow_P.get_mpz_t(), 10, P);
+        mpz_class scaled = num * ten_pow_P;
+        mpz_class q;
+        mpz_fdiv_q(q.get_mpz_t(), scaled.get_mpz_t(),
+                   radix_pow_k.get_mpz_t());
+        if (negate) q = -q;
+        return Value::make_float_normalized(std::move(q),
+                                            -static_cast<int>(P),
+                                            state.precision);
     }
 
     // HMS: contains @

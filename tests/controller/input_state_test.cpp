@@ -270,3 +270,126 @@ TEST(InputStateTest, FractionWithLeadingZeroNumerator) {
     EXPECT_EQ(v->as_fraction().num, 9);
     EXPECT_EQ(v->as_fraction().den, 10);
 }
+
+// --- Radix-prefix decimals ----------------------------------------------
+// "16#3.243f6a88" → π-ish. Stored as a base-10 DecimalFloat at the
+// active precision; round-trip back through the formatter in hex
+// recovers the leading digits.
+
+TEST(InputStateTest, RadixHexFloatBasic) {
+    // 16#0.8 = 8/16 = 0.5 exactly.
+    InputState is;
+    CalcState state;
+    state.precision = 12;
+    for (char c : std::string("16#0.8")) is.feed(c, state);
+    auto v = is.finalize(state);
+    ASSERT_TRUE(v);
+    ASSERT_TRUE(v->is_float());
+    auto& f = v->as_float();
+    double val = f.mantissa.get_d() * std::pow(10.0, f.exponent);
+    EXPECT_NEAR(val, 0.5, 1e-15);
+}
+
+TEST(InputStateTest, RadixBinaryFloat) {
+    // 2#1.01 = 1 + 1/4 = 1.25 exactly.
+    InputState is;
+    CalcState state;
+    state.precision = 12;
+    for (char c : std::string("2#1.01")) is.feed(c, state);
+    auto v = is.finalize(state);
+    ASSERT_TRUE(v);
+    ASSERT_TRUE(v->is_float());
+    auto& f = v->as_float();
+    double val = f.mantissa.get_d() * std::pow(10.0, f.exponent);
+    EXPECT_NEAR(val, 1.25, 1e-15);
+}
+
+TEST(InputStateTest, RadixOctalFloat) {
+    // 8#3.7 = 3 + 7/8 = 3.875 exactly.
+    InputState is;
+    CalcState state;
+    state.precision = 12;
+    for (char c : std::string("8#3.7")) is.feed(c, state);
+    auto v = is.finalize(state);
+    ASSERT_TRUE(v);
+    ASSERT_TRUE(v->is_float());
+    auto& f = v->as_float();
+    double val = f.mantissa.get_d() * std::pow(10.0, f.exponent);
+    EXPECT_NEAR(val, 3.875, 1e-15);
+}
+
+TEST(InputStateTest, RadixHexPiApproximation) {
+    // 16#3.243f6a88 ≈ π to about 10 decimal places (8 hex digits ≈ 9.6
+    // decimal). With precision 12 the round-trip is bounded by the
+    // input itself, not by storage.
+    InputState is;
+    CalcState state;
+    state.precision = 12;
+    for (char c : std::string("16#3.243f6a88")) is.feed(c, state);
+    auto v = is.finalize(state);
+    ASSERT_TRUE(v);
+    ASSERT_TRUE(v->is_float());
+    auto& f = v->as_float();
+    double val = f.mantissa.get_d() * std::pow(10.0, f.exponent);
+    // Expected: 3 + 0x243f6a88 / 16^8 = 3.14159265346288681030...
+    EXPECT_NEAR(val, 3.141592653, 1e-9);
+}
+
+TEST(InputStateTest, RadixDecimalLeadingDot) {
+    // "16#.8" — empty integer part, fractional only. Should equal 0.5.
+    InputState is;
+    CalcState state;
+    state.precision = 12;
+    for (char c : std::string("16#.8")) is.feed(c, state);
+    auto v = is.finalize(state);
+    ASSERT_TRUE(v);
+    ASSERT_TRUE(v->is_float());
+    auto& f = v->as_float();
+    double val = f.mantissa.get_d() * std::pow(10.0, f.exponent);
+    EXPECT_NEAR(val, 0.5, 1e-15);
+}
+
+TEST(InputStateTest, RadixDecimalTrailingDot) {
+    // "16#3." — trailing dot, no fractional digits. Should equal 3.0
+    // (a float, not an integer — the user explicitly typed a dot).
+    InputState is;
+    CalcState state;
+    state.precision = 12;
+    for (char c : std::string("16#3.")) is.feed(c, state);
+    auto v = is.finalize(state);
+    ASSERT_TRUE(v);
+    ASSERT_TRUE(v->is_float());
+    auto& f = v->as_float();
+    double val = f.mantissa.get_d() * std::pow(10.0, f.exponent);
+    EXPECT_NEAR(val, 3.0, 1e-15);
+}
+
+TEST(InputStateTest, RadixIntegerStillProducesInteger) {
+    // No dot in the radix digits — preserve the existing behavior of
+    // making an Integer (not a Float). Important because the formatter,
+    // bitwise ops, etc. all behave differently on integers vs floats.
+    InputState is;
+    CalcState state;
+    state.precision = 12;
+    for (char c : std::string("16#FF")) is.feed(c, state);
+    auto v = is.finalize(state);
+    ASSERT_TRUE(v);
+    EXPECT_TRUE(v->is_integer());
+    EXPECT_EQ(v->as_integer().v, 255);
+}
+
+TEST(InputStateTest, RadixHexFloatNegative) {
+    // "_16#0.8" via the keyboard '_' key: text_ becomes "-16#0.8".
+    // The leading '-' applies to the value, not the radix.
+    InputState is;
+    CalcState state;
+    state.precision = 12;
+    is.feed('_', state);
+    for (char c : std::string("16#0.8")) is.feed(c, state);
+    auto v = is.finalize(state);
+    ASSERT_TRUE(v);
+    ASSERT_TRUE(v->is_float());
+    auto& f = v->as_float();
+    double val = f.mantissa.get_d() * std::pow(10.0, f.exponent);
+    EXPECT_NEAR(val, -0.5, 1e-15);
+}
