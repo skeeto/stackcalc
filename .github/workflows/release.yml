@@ -55,14 +55,120 @@ jobs:
         # runner.
         run: cmake --build build --config Release -j 2
 
-      - name: Package (DMG)
-        run: cmake --build build --target package
+      # The app goes on unsigned (the linker's ad hoc signature) as a
+      # tarball, which keeps the bundle's permissions and symlinks. The
+      # sign-macos job signs it and makes the disk image.
+      - name: Pack the app
+        run: |
+          mkdir out
+          tar czf out/stackcalc.app.tar.gz -C build/bin stackcalc.app
+
+      - name: Upload app
+        uses: actions/upload-artifact@v4
+        with:
+          name: stackcalc-macos-app
+          path: out/stackcalc.app.tar.gz
+          if-no-files-found: error
+
+  # Signs the app with the Developer ID Application certificate, puts it
+  # on a disk image beside a link to /Applications, then signs,
+  # notarizes and staples the image, in a job of its own so that only
+  # it sees the release environment's Apple secrets: the certificate, a
+  # .p12 in base64 (MACOS_CERTIFICATE, with MACOS_CERTIFICATE_PASSWORD),
+  # and an App Store Connect API key (MACOS_NOTARY_KEY, the .p8's text,
+  # with MACOS_NOTARY_KEY_ID and MACOS_NOTARY_ISSUER).
+  sign-macos:
+    needs: build-macos
+    runs-on: macos-14
+    environment: release
+    env:
+      IDENTITY: 'Developer ID Application: Christopher Wellons (A7AR282GVM)'
+    steps:
+      - name: Download app
+        uses: actions/download-artifact@v4
+        with:
+          name: stackcalc-macos-app
+          path: app
+
+      # A keychain of the job's own, with a random password, which
+      # codesign may use without asking, searched ahead of the others
+      - name: Import the certificate
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          kc=$RUNNER_TEMP/signing.keychain-db
+          pw=$(openssl rand -hex 24)
+          security create-keychain -p "$pw" "$kc"
+          security set-keychain-settings -lut 3600 "$kc"
+          security unlock-keychain -p "$pw" "$kc"
+          printf %s "$MACOS_CERTIFICATE" | base64 -d >"$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$kc" \
+              -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          rm -f "$RUNNER_TEMP/cert.p12"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+              -s -k "$pw" "$kc" >/dev/null
+          # shellcheck disable=SC2046  # the list, one keychain per word
+          security list-keychains -d user -s "$kc" \
+              $(security list-keychains -d user | tr -d '"')
+          if ! security find-identity -v -p codesigning "$kc" | grep -qF "\"$IDENTITY\""; then
+              echo "::error::no identity \"$IDENTITY\" in the certificate"
+              exit 1
+          fi
+
+      # The hardened runtime and a secure timestamp, as notarization
+      # requires. APFS for the image, as CPack's (CMakeLists.txt).
+      - name: Sign the app and make the disk image
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          BASE_VERSION=${VERSION%-rc*}
+          stage=$RUNNER_TEMP/dmg
+          mkdir "$stage"
+          tar xzf app/stackcalc.app.tar.gz -C "$stage"
+          codesign --force --options runtime --timestamp \
+              --sign "$IDENTITY" "$stage/stackcalc.app"
+          codesign --verify --deep --strict --verbose=2 "$stage/stackcalc.app"
+          ln -s /Applications "$stage/Applications"
+          mkdir out
+          dmg=out/stackcalc-${BASE_VERSION}-macos-arm64.dmg
+          hdiutil create -volname stackcalc -srcfolder "$stage" \
+              -fs APFS -format UDZO "$dmg"
+          codesign --force --timestamp --sign "$IDENTITY" "$dmg"
+          echo "DMG=$dmg" >>"$GITHUB_ENV"
+
+      # notarytool exits 0 whatever Apple decides, so its status is read
+      - name: Notarize and staple
+        env:
+          MACOS_NOTARY_KEY: ${{ secrets.MACOS_NOTARY_KEY }}
+          MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          MACOS_NOTARY_ISSUER: ${{ secrets.MACOS_NOTARY_ISSUER }}
+        run: |
+          key=$RUNNER_TEMP/notary.p8
+          printf '%s\n' "$MACOS_NOTARY_KEY" >"$key"
+          out=$(xcrun notarytool submit "$DMG" --key "$key" \
+              --key-id "$MACOS_NOTARY_KEY_ID" --issuer "$MACOS_NOTARY_ISSUER" \
+              --wait 2>&1) || true
+          echo "$out"
+          if ! grep -q 'status: Accepted' <<<"$out"; then
+              id=$(sed -n 's/^ *id: \([0-9a-f-]*\).*/\1/p' <<<"$out" | head -n1)
+              echo "::error::not notarized; Apple's reasons: xcrun notarytool log $id"
+              exit 1
+          fi
+          xcrun stapler staple "$DMG"
+          spctl --assess --type open --context context:primary-signature \
+              --verbose "$DMG"
+
+      - name: Remove the keychain and key
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true
+          rm -f "$RUNNER_TEMP/notary.p8" "$RUNNER_TEMP/cert.p12"
 
       - name: Upload DMG
         uses: actions/upload-artifact@v4
         with:
           name: stackcalc-macos
-          path: build/stackcalc-*-macos-arm64.dmg
+          path: out/stackcalc-*-macos-arm64.dmg
           if-no-files-found: error
 
   build-windows:
@@ -114,7 +220,7 @@ jobs:
           if-no-files-found: error
 
   release:
-    needs: [build-macos, build-windows]
+    needs: [sign-macos, build-windows]
     runs-on: ubuntu-latest
     environment: release
     permissions:
