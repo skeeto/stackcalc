@@ -23,14 +23,14 @@ jobs:
 
   build-macos:
     needs: verify-version
-    runs-on: macos-14
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
 
       # Cache the FetchContent output (GMP, MPFR, wxWidgets) so wx
       # only rebuilds when its tarball URL/hash changes. ImageVersion
       # is GitHub's per-runner-image identifier — bumps when the
-      # mac-14 image is refreshed (toolchain version moves with it).
+      # macos-26 image is refreshed (toolchain version moves with it).
       - name: Cache _deps
         uses: actions/cache@v4
         with:
@@ -48,7 +48,7 @@ jobs:
             -DSTACKCALC_BUILD_TESTS=OFF
 
       - name: Build
-        # -j 2 keeps memory pressure manageable on the 14 GB mac-14
+        # -j 2 keeps memory pressure manageable on the macos-26
         # runner; cached _deps means the second-run cost is small
         # even at low parallelism. See build-windows for the swap-
         # thrashing failure mode this avoids on the smaller ubuntu
@@ -79,7 +79,7 @@ jobs:
   # with MACOS_NOTARY_KEY_ID and MACOS_NOTARY_ISSUER).
   sign-macos:
     needs: build-macos
-    runs-on: macos-14
+    runs-on: macos-26
     environment: release
     env:
       IDENTITY: 'Developer ID Application: Christopher Wellons (A7AR282GVM)'
